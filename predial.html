@@ -412,6 +412,12 @@ const daysUntil = (v) => {
   const now = new Date(); now.setHours(0,0,0,0);
   return Math.round((d-now)/86400000);
 };
+const addMonthsToDate = (v, months) => {
+  if(!v) return '';
+  const d = new Date(v+'T00:00:00');
+  d.setMonth(d.getMonth() + Number(months||0));
+  return d.toISOString().slice(0,10);
+};
 
 const MAX_ANEXO_BYTES = 2 * 1024 * 1024; // 2MB por PDF anexado (limite prudente para o espaço do navegador)
 
@@ -453,7 +459,7 @@ function base64ToBlob(base64, type){
   return new Blob([new Uint8Array(byteNumbers)], {type: type || 'application/pdf'});
 }
 
-const TIPOS_IMOVEL = ['Apartamento','Moradia','Loja','Escritório','Garagem','Terreno'];
+const TIPOS_IMOVEL = ['Apartamento','Moradia','Loja','Escritório','Garagem','Armazém','Terreno'];
 const ESTADOS_IMOVEL = ['Ocupado','Vago','Em Manutenção'];
 const PRIORIDADES = ['Alta','Média','Baixa'];
 const ESTADOS_MANUT = ['Pendente','Em Curso','Concluído'];
@@ -470,10 +476,13 @@ function seedData(){
     {id:'INQ001', nome:'Maria Ferreira', nif:'123456789', telefone:'912345678', email:'maria.ferreira@email.com', imovelId:'IM001', dataInicio:'2024-01-01', notas:''},
   ];
   const contratos = [
-    {id:'CT001', imovelId:'IM001', inquilinoId:'INQ001', dataInicio:'2024-01-01', dataFim:'2027-12-31', renda:950, caucao:950, prazoAvisoRescisao:120, rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', notas:''},
+    {id:'CT001', imovelId:'IM001', inquilinoId:'INQ001', dataInicio:'2024-01-01', dataFim:'2027-12-31', renda:950, caucao:950, prazoAvisoRescisao:120, renovavel:true, periodoRenovacaoMeses:12, rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', notas:''},
   ];
   const atualizacoesRenda = [
     {id:'AR001', contratoId:'CT001', data:'2025-01-01', valorAnterior:900, valorNovo:950, motivo:'Atualização anual (coeficiente de inflação)'},
+  ];
+  const renovacoes = [
+    {id:'RN001', contratoId:'CT001', data:'2025-12-15', dataFimAnterior:'2025-12-31', novaDataFim:'2027-12-31', periodoMeses:24, notas:'Renovação automática por não ter havido aviso de rescisão'},
   ];
   const pagamentos = [
     {id:'PG001', contratoId:'CT001', mesRef:'2026-08', valorDevido:950, dataVencimento:'2026-08-08', dataPagamento:'2026-08-05', valorPago:950, notas:''},
@@ -506,7 +515,7 @@ function seedData(){
   const despesas = [
     {id:'DP001', imovelId:'IM003', data:'2026-08-22', anoFiscal:2026, categoria:'Obras', descricao:'Reparação de canalização na cozinha', valor:120, dedutivel:true, notas:'Relacionado com o pedido de manutenção MN001', temComprovativo:false, comprovativoNome:'', comprovativoTipo:''},
   ];
-  return {imoveis, inquilinos, contratos, pagamentos, manutencoes, tarefas, documentos, listaEspera, proprietarios, atualizacoesRenda, vistorias, despesas};
+  return {imoveis, inquilinos, contratos, pagamentos, manutencoes, tarefas, documentos, listaEspera, proprietarios, atualizacoesRenda, vistorias, despesas, renovacoes};
 }
 
 /* ============================== Configuração do Supabase ============================== */
@@ -604,6 +613,7 @@ const TABLE_MAP = {
   atualizacoesRenda: 'atualizacoes_renda',
   vistorias: 'vistorias',
   despesas: 'despesas',
+  renovacoes: 'renovacoes',
 };
 
 /* ============================== Storage layer (Supabase Storage — anexos) ============================== */
@@ -1470,7 +1480,7 @@ function avisoRescisaoInfo(c){
 }
 
 function ContratosView({data, addOrEdit, remove, modal, setModal}){
-  const empty = {id:'', imovelId:'', inquilinoId:'', dataInicio:'', dataFim:'', renda:'', caucao:'', prazoAvisoRescisao:120, rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', notas:''};
+  const empty = {id:'', imovelId:'', inquilinoId:'', dataInicio:'', dataFim:'', renda:'', caucao:'', prazoAvisoRescisao:120, renovavel:false, periodoRenovacaoMeses:'', rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', notas:''};
   const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
   const inquilinoNome = (id) => { const iq = data.inquilinos.find(i=>i.id===id); return iq ? iq.nome : '—'; };
   const [expanded, setExpanded] = useState(null);
@@ -1487,6 +1497,12 @@ function ContratosView({data, addOrEdit, remove, modal, setModal}){
 
   const saveAtualizacao = (formData) => {
     addOrEdit('atualizacoesRenda', formData);
+    setModal(null);
+  };
+
+  const saveRenovacao = (contrato, formData) => {
+    addOrEdit('renovacoes', formData);
+    addOrEdit('contratos', {...contrato, dataFim: formData.novaDataFim});
     setModal(null);
   };
 
@@ -1541,6 +1557,7 @@ function ContratosView({data, addOrEdit, remove, modal, setModal}){
               const renda = rendaAtual(c.id, c.renda, data.atualizacoesRenda);
               const aviso = avisoRescisaoInfo(c);
               const historico = data.atualizacoesRenda.filter(a=>a.contratoId===c.id).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+              const renovacoesContrato = data.renovacoes.filter(r=>r.contratoId===c.id).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
               return (
                 <React.Fragment key={c.id}>
                   <tr>
@@ -1615,6 +1632,43 @@ function ContratosView({data, addOrEdit, remove, modal, setModal}){
                         )}
 
                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                          <div style={{fontWeight:700, fontSize:13}}>Renovação</div>
+                          {c.renovavel && !c.rescindido && (
+                            <button className="btn btn-ghost btn-sm" onClick={()=>{
+                              const periodo = Number(c.periodoRenovacaoMeses||12);
+                              setModal({type:'renovacao', item:{
+                                id:uid('RN'), contratoId:c.id, data:todayISO(),
+                                dataFimAnterior:c.dataFim, periodoMeses:periodo,
+                                novaDataFim: addMonthsToDate(c.dataFim, periodo), notas:''
+                              }});
+                            }}>+ Registar renovação</button>
+                          )}
+                        </div>
+                        <div style={{fontSize:12.5, color:'var(--charcoal)', marginBottom:8}}>
+                          {c.renovavel
+                            ? <span>Renovável, período de {c.periodoRenovacaoMeses || '—'} meses</span>
+                            : <span style={{color:'var(--gray)'}}>Este contrato não está marcado como renovável.</span>}
+                        </div>
+                        {renovacoesContrato.length>0 && (
+                          <div className="table-wrap" style={{marginBottom:16}}>
+                            <table>
+                              <thead><tr><th>Data</th><th>Fim Anterior</th><th>Novo Fim</th><th>Período</th><th>Notas</th></tr></thead>
+                              <tbody>
+                                {renovacoesContrato.map(rn=>(
+                                  <tr key={rn.id}>
+                                    <td>{fmtDate(rn.data)}</td>
+                                    <td>{fmtDate(rn.dataFimAnterior)}</td>
+                                    <td style={{fontWeight:600}}>{fmtDate(rn.novaDataFim)}</td>
+                                    <td>{rn.periodoMeses} meses</td>
+                                    <td>{rn.notas}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
                           <div style={{fontWeight:700, fontSize:13}}>Rescisão do contrato</div>
                           {!c.rescindido && <button className="btn btn-danger-ghost btn-sm" onClick={()=>setModal({type:'rescisao', item:{contrato:c, dataRescisao:todayISO(), motivoRescisao:''}})}>Rescindir contrato</button>}
                         </div>
@@ -1657,6 +1711,12 @@ function ContratosView({data, addOrEdit, remove, modal, setModal}){
         </Modal>
       )}
 
+      {modal && modal.type==='renovacao' && (
+        <Modal title="Registar renovação de contrato" onClose={()=>setModal(null)}>
+          <RenovacaoForm item={modal.item} onSave={(formData)=>saveRenovacao(data.contratos.find(x=>x.id===formData.contratoId), formData)} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+
       {modal && modal.type==='rescisao' && (
         <Modal title={'Rescindir contrato ' + modal.item.contrato.id} onClose={()=>setModal(null)}>
           <RescisaoForm item={modal.item} onSave={(formData, fileAction)=>saveRescisao(modal.item.contrato, formData, fileAction)} onCancel={()=>setModal(null)} />
@@ -1689,6 +1749,42 @@ function ContratoForm({item, imoveis, inquilinos, onSave, onCancel}){
         <div className="field"><label>Renda inicial (€)</label><input type="number" value={f.renda} onChange={e=>set('renda',e.target.value)} /></div>
         <div className="field"><label>Caução (€)</label><input type="number" value={f.caucao} onChange={e=>set('caucao',e.target.value)} /></div>
         <div className="field full"><label>Prazo para envio de aviso de rescisão (dias antes do fim)</label><input type="number" placeholder="ex: 120" value={f.prazoAvisoRescisao} onChange={e=>set('prazoAvisoRescisao',e.target.value)} /></div>
+        <div className="field">
+          <label>Contrato renovável?</label>
+          <select value={f.renovavel ? '1' : '0'} onChange={e=>set('renovavel', e.target.value==='1')}>
+            <option value="0">Não</option>
+            <option value="1">Sim</option>
+          </select>
+        </div>
+        {f.renovavel && (
+          <div className="field"><label>Período de renovação (meses)</label><input type="number" placeholder="ex: 12" value={f.periodoRenovacaoMeses} onChange={e=>set('periodoRenovacaoMeses',e.target.value)} /></div>
+        )}
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+function RenovacaoForm({item, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+
+  const onPeriodoChange = (v) => {
+    set('periodoMeses', v);
+    if(v){ set('novaDataFim', addMonthsToDate(f.dataFimAnterior, Number(v))); }
+  };
+
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field"><label>Data do registo</label><input type="date" value={f.data} onChange={e=>set('data',e.target.value)} /></div>
+        <div className="field"><label>Data de fim anterior</label><input type="date" value={f.dataFimAnterior} disabled style={{color:'var(--gray)'}} /></div>
+        <div className="field"><label>Período de renovação (meses)</label><input type="number" value={f.periodoMeses} onChange={e=>onPeriodoChange(e.target.value)} /></div>
+        <div className="field"><label>Nova data de fim</label><input type="date" value={f.novaDataFim} onChange={e=>set('novaDataFim',e.target.value)} /></div>
         <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
       </div>
       <div className="modal-actions">
@@ -1887,14 +1983,83 @@ function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietari
 
 /* ============================== Manutenção ============================== */
 function ManutencaoView({data, addOrEdit, remove, modal, setModal}){
-  const empty = {id:'', imovelId:'', dataPedido:todayISO(), descricao:'', prioridade:'Média', estado:'Pendente', custo:'', fornecedor:''};
+  const empty = {id:'', imovelId:'', dataPedido:todayISO(), descricao:'', prioridade:'Média', estado:'Pendente', custo:'', fornecedor:'', temFatura:false, faturaNome:'', faturaTipo:'', despesaId:''};
   const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
+  const [busyId, setBusyId] = useState(null);
+
+  const handleSave = async (formData, fileAction, criarDespesa) => {
+    let updated = {...formData};
+    if(fileAction && fileAction.type==='set'){
+      if(!storageAvailable()){
+        alert('O seu navegador não permite guardar anexos neste contexto. O pedido foi guardado sem a fatura.');
+      } else {
+        try{
+          await storeSet('predial:anexo:manut:'+formData.id, fileAction.base64);
+          updated = {...updated, temFatura:true, faturaNome:fileAction.nome, faturaTipo:fileAction.tipo};
+        } catch(e){
+          const detalhe = (e && e.name==='QuotaExceededError') ? 'o espaço de armazenamento do navegador está cheio' : ((e && e.message) || 'erro desconhecido');
+          alert('Não foi possível guardar a fatura (' + detalhe + '). O pedido foi guardado sem o anexo.');
+        }
+      }
+    } else if(fileAction && fileAction.type==='remove'){
+      await storeDelete('predial:anexo:manut:'+formData.id);
+      updated = {...updated, temFatura:false, faturaNome:'', faturaTipo:''};
+    }
+
+    if(criarDespesa && Number(updated.custo)>0){
+      const despesaId = updated.despesaId || uid('DP');
+      if(updated.temFatura){
+        try{
+          const raw = await storeGet('predial:anexo:manut:'+updated.id);
+          if(raw) await storeSet('predial:anexo:despesa:'+despesaId, raw);
+        } catch(e){ /* a despesa fica criada mesmo assim, só sem cópia do anexo */ }
+      }
+      addOrEdit('despesas', {
+        id: despesaId, imovelId: updated.imovelId, data: updated.dataPedido,
+        anoFiscal: updated.dataPedido ? Number(updated.dataPedido.slice(0,4)) : new Date().getFullYear(),
+        categoria: 'Manutenção', descricao: updated.descricao || ('Manutenção — ' + (updated.fornecedor||'')),
+        valor: updated.custo, dedutivel: true,
+        notas: 'Criada automaticamente a partir do pedido de manutenção ' + updated.id,
+        temComprovativo: updated.temFatura, comprovativoNome: updated.faturaNome, comprovativoTipo: updated.faturaTipo,
+      });
+      updated = {...updated, despesaId};
+    } else if(!criarDespesa && updated.despesaId){
+      const despesaAntiga = updated.despesaId;
+      if(updated.temFatura) await storeDelete('predial:anexo:despesa:'+despesaAntiga);
+      remove('despesas', despesaAntiga);
+      updated = {...updated, despesaId:''};
+    }
+
+    addOrEdit('manutencoes', updated);
+    setModal(null);
+  };
+
+  const handleRemove = async (m) => {
+    if(m.temFatura) await storeDelete('predial:anexo:manut:'+m.id);
+    remove('manutencoes', m.id);
+  };
+
+  const handleView = async (m) => {
+    setBusyId(m.id);
+    try{
+      const raw = await storeGet('predial:anexo:manut:'+m.id);
+      if(!raw){ alert('Fatura não encontrada.'); return; }
+      const blob = base64ToBlob(raw, m.faturaTipo);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    } catch(e){
+      alert('Não foi possível abrir a fatura.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   return (
     <PageShell title="Manutenção" subtitle="Pedidos e intervenções nos seus imóveis." onNew={()=>setModal({type:'manut', item:{...empty, id:uid('MN')}})}>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Imóvel</th><th>Descrição</th><th>Prioridade</th><th>Estado</th><th>Custo</th><th></th></tr></thead>
+          <thead><tr><th>Imóvel</th><th>Descrição</th><th>Prioridade</th><th>Estado</th><th>Custo</th><th>Fatura</th><th></th></tr></thead>
           <tbody>
             {data.manutencoes.map(m=>(
               <tr key={m.id}>
@@ -1904,21 +2069,29 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal}){
                 <td>{estadoManutTag(m.estado)}</td>
                 <td>{fmtEUR(m.custo)}</td>
                 <td>
+                  {m.temFatura ? (
+                    <button className="icon-btn" disabled={busyId===m.id} onClick={()=>handleView(m)}>
+                      📎 {busyId===m.id ? 'A abrir…' : 'Ver'}
+                    </button>
+                  ) : <span style={{color:'var(--gray)', fontSize:12}}>—</span>}
+                  {m.despesaId && <div style={{fontSize:11, color:'var(--verdigris)', marginTop:3}}>Nas Despesas</div>}
+                </td>
+                <td>
                   <div className="row-actions">
                     <button className="icon-btn" onClick={()=>setModal({type:'manut', item:m})}>Editar</button>
-                    <button className="icon-btn danger" onClick={()=>remove('manutencoes', m.id)}>Remover</button>
+                    <button className="icon-btn danger" onClick={()=>handleRemove(m)}>Remover</button>
                   </div>
                 </td>
               </tr>
             ))}
-            {data.manutencoes.length===0 && <tr><td colSpan="6" className="empty">Nenhum pedido de manutenção.</td></tr>}
+            {data.manutencoes.length===0 && <tr><td colSpan="7" className="empty">Nenhum pedido de manutenção.</td></tr>}
           </tbody>
         </table>
       </div>
 
       {modal && modal.type==='manut' && (
         <Modal title={data.manutencoes.some(x=>x.id===modal.item.id) ? 'Editar pedido' : 'Novo pedido de manutenção'} onClose={()=>setModal(null)}>
-          <ManutForm item={modal.item} imoveis={data.imoveis} onSave={(it)=>{addOrEdit('manutencoes',it); setModal(null);}} onCancel={()=>setModal(null)} />
+          <ManutForm item={modal.item} imoveis={data.imoveis} onSave={handleSave} onCancel={()=>setModal(null)} />
         </Modal>
       )}
     </PageShell>
@@ -1927,7 +2100,45 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal}){
 
 function ManutForm({item, imoveis, onSave, onCancel}){
   const [f, setF] = useState(item);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [removeExisting, setRemoveExisting] = useState(false);
+  const [criarDespesa, setCriarDespesa] = useState(!!item.despesaId || Number(item.custo)>0);
+  const [error, setError] = useState('');
   const set = (k,v)=>setF(s=>({...s,[k]:v}));
+
+  const onFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    setError('');
+    if(!file) return;
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const isImage = file.type.startsWith('image/');
+    if(!isPdf && !isImage){ setError('Anexe um PDF ou uma foto da fatura.'); e.target.value=''; return; }
+
+    if(isImage){
+      compressImageFile(file).then(({base64, tipo}) => {
+        setPendingFile({nome:file.name, tipo, base64});
+        setRemoveExisting(false);
+      }).catch(() => setError('Não foi possível processar a imagem.'));
+      return;
+    }
+    if(file.size > MAX_ANEXO_BYTES){ setError('O PDF é demasiado grande (máx. 2 MB).'); e.target.value=''; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = String(reader.result).split(',')[1] || '';
+      setPendingFile({nome:file.name, tipo:file.type || 'application/pdf', base64});
+      setRemoveExisting(false);
+    };
+    reader.onerror = () => setError('Não foi possível ler o ficheiro.');
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = () => {
+    let fileAction = null;
+    if(pendingFile) fileAction = {type:'set', ...pendingFile};
+    else if(removeExisting) fileAction = {type:'remove'};
+    onSave(f, fileAction, criarDespesa);
+  };
+
   return (
     <React.Fragment>
       <div className="form-grid">
@@ -1951,10 +2162,31 @@ function ManutForm({item, imoveis, onSave, onCancel}){
         </div>
         <div className="field"><label>Custo (€)</label><input type="number" value={f.custo} onChange={e=>set('custo',e.target.value)} /></div>
         <div className="field"><label>Fornecedor / Técnico</label><input value={f.fornecedor} onChange={e=>set('fornecedor',e.target.value)} /></div>
+
+        <div className="field full">
+          <label>Fatura (PDF ou foto)</label>
+          <input type="file" accept="application/pdf,.pdf,image/*" onChange={onFileChange} />
+          {error && <div style={{color:'var(--rust)', fontSize:12}}>{error}</div>}
+          {pendingFile && <div style={{color:'var(--verdigris)', fontSize:12}}>Pronto para guardar: {pendingFile.nome}</div>}
+          {!pendingFile && f.temFatura && !removeExisting && (
+            <div style={{display:'flex', alignItems:'center', gap:10, fontSize:12, color:'var(--gray)'}}>
+              <span>Fatura atual: {f.faturaNome}</span>
+              <button type="button" className="icon-btn danger" onClick={()=>setRemoveExisting(true)}>Remover</button>
+            </div>
+          )}
+          {removeExisting && <div style={{color:'var(--rust)', fontSize:12}}>A fatura será removida ao guardar.</div>}
+        </div>
+
+        <div className="field full">
+          <label style={{display:'flex', alignItems:'center', gap:8, fontWeight:600}}>
+            <input type="checkbox" checked={criarDespesa} onChange={e=>setCriarDespesa(e.target.checked)} style={{width:'auto'}} />
+            Adicionar automaticamente à lista de Despesas do imóvel
+          </label>
+        </div>
       </div>
       <div className="modal-actions">
         <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
-        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+        <button className="btn btn-primary" onClick={handleSubmit}>Guardar</button>
       </div>
     </React.Fragment>
   );
