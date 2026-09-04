@@ -9,7 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script src="supabase.js"></script>
 <style>
   :root{
     --ink:#16283D;
@@ -539,7 +539,7 @@ let supabaseInitError = '';
 if(supabaseConfigured){
   try{
     if(!window.supabase || !window.supabase.createClient){
-      supabaseInitError = 'A biblioteca do Supabase não carregou. Verifique a ligação à internet, ou se algum bloqueador de anúncios/privacidade está a impedir o carregamento de unpkg.com.';
+      supabaseInitError = 'A biblioteca do Supabase não carregou. Confirme que o ficheiro "supabase.js" foi carregado para o GitHub na mesma pasta do predial.html.';
     } else {
       supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: { storage: safeAuthStorage(), persistSession: true, autoRefreshToken: true }
