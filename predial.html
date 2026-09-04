@@ -536,19 +536,48 @@ function safeAuthStorage(){
 const supabaseConfigured = SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY.length > 20;
 let supabase = null;
 let supabaseInitError = '';
-if(supabaseConfigured){
-  try{
-    if(!window.supabase || !window.supabase.createClient){
-      supabaseInitError = 'A biblioteca do Supabase não carregou. Confirme que o ficheiro "supabase.js" foi carregado para o GitHub na mesma pasta do predial.html.';
-    } else {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { storage: safeAuthStorage(), persistSession: true, autoRefreshToken: true }
-      });
-    }
-  } catch(e){
-    supabaseInitError = 'Não foi possível iniciar o Supabase: ' + (e && e.message ? e.message : String(e)) + '. Confirme que copiou corretamente o Project URL e a anon key.';
-  }
+
+// Em vez de assumir que window.supabase já está pronto assim que este script
+// corre, esperamos por ele (até 5s) — evita falhas por questões de timing
+// entre o carregamento do supabase.js e a execução deste código.
+function useSupabaseInit(){
+  const [status, setStatus] = useState(supabaseConfigured ? 'checking' : 'unconfigured');
+
+  useEffect(() => {
+    if(!supabaseConfigured) return;
+    let attempts = 0;
+    const maxAttempts = 50; // 50 x 100ms = 5s
+    let timer = null;
+
+    const tryInit = () => {
+      attempts++;
+      if(window.supabase && window.supabase.createClient){
+        try{
+          supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: { storage: safeAuthStorage(), persistSession: true, autoRefreshToken: true }
+          });
+          setStatus('ready');
+        } catch(e){
+          supabaseInitError = 'Não foi possível iniciar o Supabase: ' + (e && e.message ? e.message : String(e)) + '. Confirme que copiou corretamente o Project URL e a anon key.';
+          setStatus('error');
+        }
+        return;
+      }
+      if(attempts >= maxAttempts){
+        supabaseInitError = 'A biblioteca do Supabase não carregou a tempo. Confirme que o ficheiro "supabase.js" está na mesma pasta do predial.html no GitHub, e tente recarregar a página (Ctrl+F5).';
+        setStatus('error');
+        return;
+      }
+      timer = setTimeout(tryInit, 100);
+    };
+    tryInit();
+
+    return () => { if(timer) clearTimeout(timer); };
+  }, []);
+
+  return status;
 }
+
 
 const TABLE_MAP = {
   imoveis: 'imoveis',
@@ -601,12 +630,12 @@ async function storeDelete(key){
 }
 
 /* ============================== Autenticação ============================== */
-function useAuth(){
+function useAuth(ready){
   const [session, setSession] = useState(undefined); // undefined = a carregar, null = sem sessão
   const [authError, setAuthError] = useState('');
 
   useEffect(() => {
-    if(!supabase){ setSession(null); return; }
+    if(!ready || !supabase){ return; }
     supabase.auth.getSession().then(({data}) => {
       currentSession = data.session;
       setSession(data.session);
@@ -616,7 +645,7 @@ function useAuth(){
       setSession(s);
     });
     return () => listener && listener.subscription && listener.subscription.unsubscribe();
-  }, []);
+  }, [ready]);
 
   const signUp = async (email, password) => {
     setAuthError('');
@@ -741,13 +770,18 @@ function percentByImovel(proprietarios, imovelId){
 
 /* ============================== App ============================== */
 function App(){
-  if(!supabaseConfigured){
+  const initStatus = useSupabaseInit();
+  const {session, authError, signUp, signIn, signOut} = useAuth(initStatus === 'ready');
+
+  if(initStatus === 'unconfigured'){
     return <ConfigNeededScreen/>;
   }
-  if(supabaseInitError){
+  if(initStatus === 'checking'){
+    return <div className="auth-screen"><div className="auth-card"><div className="brand-word" style={{color:'var(--ink)'}}>Predial</div><p style={{color:'var(--gray)'}}>A iniciar…</p></div></div>;
+  }
+  if(initStatus === 'error'){
     return <InitErrorScreen message={supabaseInitError} />;
   }
-  const {session, authError, signUp, signIn, signOut} = useAuth();
 
   if(session === undefined){
     return <div className="auth-screen"><div className="auth-card"><div className="brand-word" style={{color:'var(--ink)'}}>Predial</div><p style={{color:'var(--gray)'}}>A verificar sessão…</p></div></div>;
