@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registo Predial — Fichas de Propriedade</title>
+  
+  <!-- Fontes -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- React & Babel CDNs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .bg-grid {
+      background-image: radial-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 bg-grid min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // Dados Iniciais / Exemplo
+    const INITIAL_PROPERTIES = [
+      {
+        id: "PRD-2023-001",
+        description: "Prédio Urbano - T3 com Garagem",
+        location: "Av. da Liberdade, nº 102, Lisboa",
+        freguesia: "Santo António",
+        matrixNumber: "4521",
+        area: "145 m²",
+        owners: ["João Maria Silva", "Ana Isabel Silva"],
+        status: "Ativo",
+        encargos: ["Hipoteca Voluntária - Banco XYZ (200.000€)"],
+        lastUpdated: "2023-11-15"
+      },
+      {
+        id: "PRD-2023-002",
+        description: "Prédio Rústico - Terreno Agrícola",
+        location: "Quinta do Vale, Lote 4, Santarém",
+        freguesia: "Azoia de Cima",
+        matrixNumber: "128",
+        area: "12.500 m²",
+        owners: ["Sociedade Agrícola do Vale, Lda"],
+        status: "Ativo",
+        encargos: ["Nenhum"],
+        lastUpdated: "2023-10-02"
+      },
+      {
+        id: "PRD-2022-089",
+        description: "Prédio Urbano - Loja Comercial",
+        location: "Rua Direita, nº 45, Porto",
+        freguesia: "Cedofeita",
+        matrixNumber: "891",
+        area: "85 m²",
+        owners: ["Carlos Alberto Santos"],
+        status: "Pendente",
+        encargos: ["Penhora - Processo 1234/21"],
+        lastUpdated: "2024-01-10"
+      }
+    ];
+
+    function App() {
+      const [properties, setProperties] = useState(() => {
+        const saved = localStorage.getItem('registo_predial_db');
+        return saved ? JSON.parse(saved) : INITIAL_PROPERTIES;
+      });
+
+      const [searchQuery, setSearchQuery] = useState('');
+      const [selectedStatus, setSelectedStatus] = useState('Todos');
+      const [selectedProperty, setSelectedProperty] = useState(null);
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [editingProperty, setEditingProperty] = useState(null);
+
+      useEffect(() => {
+        localStorage.setItem('registo_predial_db', JSON.stringify(properties));
+      }, [properties]);
+
+      const filteredProperties = useMemo(() => {
+        return properties.filter(prop => {
+          const matchesSearch = 
+            prop.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            prop.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            prop.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            prop.owners.some(o => o.toLowerCase().includes(searchQuery.toLowerCase()));
+          
+          const matchesStatus = selectedStatus === 'Todos' || prop.status === selectedStatus;
+          
+          return matchesSearch && matchesStatus;
+        });
+      }, [properties, searchQuery, selectedStatus]);
+
+      const handleSave = (propertyData) => {
+        if (editingProperty) {
+          setProperties(properties.map(p => p.id === editingProperty.id ? propertyData : p));
+        } else {
+          setProperties([{ ...propertyData, id: `PRD-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}` }, ...properties]);
+        }
+        setIsModalOpen(false);
+        setEditingProperty(null);
+      };
+
+      const handleDelete = (id) => {
+        if (confirm('Tem a certeza que deseja eliminar este registo predial?')) {
+          setProperties(properties.filter(p => p.id !== id));
+          if (selectedProperty && selectedProperty.id === id) {
+            setSelectedProperty(null);
+          }
+        }
+      };
+
+      return (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Header */}
+          <header className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
+                <span className="p-2 bg-blue-600 text-white rounded-lg shadow-sm">
+                  <i data-lucide="building-2" className="w-6 h-6"></i>
+                </span>
+                Registo Predial Central
+              </h1>
+              <p className="text-slate-500 mt-1">Gestão e Consulta de Fichas de Propriedade e Matrizes Prediais</p>
+            </div>
+            
+            <button 
+              onClick={() => { setEditingProperty(null); setIsModalOpen(true); }}
+              className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg shadow-sm transition-all"
+            >
+              <i data-lucide="plus" className="w-4 h-4"></i>
+              Nova Ficha Predial
+            </button>
+          </header>
+
+          {/* Search & Filters */}
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="relative w-full sm:w-96">
+              <i data-lucide="search" className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+              <input
+                type="text"
+                placeholder="Pesquisar por NIP, proprietário, morada..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Estado:</span>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-lg text-sm px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="Todos">Todos</option>
+                <option value="Ativo">Ativo</option>
+                <option value="Pendente">Pendente</option>
+                <option value="Arquivado">Arquivado</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Main Content Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* List */}
+            <div className="lg:col-span-2 space-y-4">
+              {filteredProperties.length === 0 ? (
+                <div className="bg-white rounded-xl p-12 text-center border border-slate-200">
+                  <i data-lucide="folder-open" className="w-12 h-12 text-slate-300 mx-auto mb-3"></i>
+                  <h3 className="text-slate-700 font-medium">Nenhum registo encontrado</h3>
+                  <p className="text-slate-400 text-sm mt-1">Tente ajustar os parâmetros de pesquisa.</p>
+                </div>
+              ) : (
+                filteredProperties.map(prop => (
+                  <div 
+                    key={prop.id}
+                    onClick={() => setSelectedProperty(prop)}
+                    className={`bg-white rounded-xl p-5 border transition-all cursor-pointer hover:shadow-md ${
+                      selectedProperty?.id === prop.id ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-md">
+                          {prop.id}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          prop.status === 'Ativo' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                          prop.status === 'Pendente' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                          'bg-slate-100 text-slate-600 border border-slate-200'
+                        }`}>
+                          {prop.status}
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-400">Atualizado: {prop.lastUpdated}</span>
+                    </div>
+
+                    <h3 className="font-semibold text-slate-900 text-lg mb-1">{prop.description}</h3>
+                    <p className="text-slate-500 text-sm flex items-center gap-1 mb-3">
+                      <i data-lucide="map-pin" className="w-3.5 h-3.5 text-slate-400"></i>
+                      {prop.location}
+                    </p>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
+                      <div>
+                        <span className="text-slate-400">Matriz:</span> <b>{prop.matrixNumber}</b> ({prop.freguesia})
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Área:</span> <b>{prop.area}</b>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Property Detail Drawer/Panel */}
+            <div className="lg:col-span-1">
+              {selectedProperty ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-6 sticky top-6 shadow-sm">
+                  <div className="flex justify-between items-start mb-4 pb-4 border-b border-slate-100">
+                    <div>
+                      <span className="font-mono text-xs font-bold text-blue-600 uppercase">{selectedProperty.id}</span>
+                      <h2 className="text-xl font-bold text-slate-900 mt-1">{selectedProperty.description}</h2>
+                    </div>
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => { setEditingProperty(selectedProperty); setIsModalOpen(true); }}
+                        className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors"
+                        title="Editar"
+                      >
+                        <i data-lucide="edit-3" className="w-4 h-4"></i>
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(selectedProperty.id)}
+                        className="p-1.5 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
+                        title="Eliminar"
+                      >
+                        <i data-lucide="trash-2" className="w-4 h-4"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-400 uppercase">Localização</label>
+                      <p className="text-slate-700 font-medium mt-0.5">{selectedProperty.location}</p>
+                      <p className="text-slate-500 text-xs">Freguesia: {selectedProperty.freguesia}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <div>
+                        <label className="text-xs text-slate-400">Nº de Matriz</label>
+                        <p className="font-semibold text-slate-800">{selectedProperty.matrixNumber}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400">Área Total</label>
+                        <p className="font-semibold text-slate-800">{selectedProperty.area}</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-400 uppercase">Proprietários Registados</label>
+                      <ul className="mt-1 space-y-1">
+                        {selectedProperty.owners.map((owner, idx) => (
+                          <li key={idx} className="flex items-center gap-2 text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-100">
+                            <i data-lucide="user" className="w-3.5 h-3.5 text-slate-400"></i>
+                            {owner}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-400 uppercase">Encargos e Onus</label>
+                      <div className="mt-1">
+                        {selectedProperty.encargos.map((encargo, idx) => (
+                          <div key={idx} className="text-xs bg-amber-50 text-amber-800 p-2.5 rounded border border-amber-200/60 flex items-start gap-2">
+                            <i data-lucide="alert-circle" className="w-4 h-4 text-amber-600 shrink-0 mt-0.5"></i>
+                            <span>{encargo}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-dashed border-slate-300 p-8 text-center text-slate-400">
+                  <i data-lucide="mouse-pointer" className="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                  <p className="text-sm">Selecione uma ficha predial da lista para ver os detalhes completos.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Modal Form */}
+          {isModalOpen && (
+            <PropertyModal
+              property={editingProperty}
+              onClose={() => setIsModalOpen(false)}
+              onSave={handleSave}
+            />
+          )}
+        </div>
+      );
+    }
+
+    function PropertyModal({ property, onClose, onSave }) {
+      const [formData, setFormData] = useState(property || {
+        description: '',
+        location: '',
+        freguesia: '',
+        matrixNumber: '',
+        area: '',
+        owners: [''],
+        status: 'Ativo',
+        encargos: ['Nenhum'],
+        lastUpdated: new Date().toISOString().split('T')[0]
+      });
+
+      const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+      };
+
+      const handleOwnerChange = (index, value) => {
+        const newOwners = [...formData.owners];
+        newOwners[index] = value;
+        setFormData(prev => ({ ...prev, owners: newOwners }));
+      };
+
+      const addOwner = () => {
+        setFormData(prev => ({ ...prev, owners: [...prev.owners, ''] }));
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(formData);
+      };
+
+      return (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900">
+                {property ? 'Editar Ficha Predial' : 'Nova Ficha Predial'}
+              </h3>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" className="w-5 h-5"></i>
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Descrição do Imóvel</label>
+                <input
+                  type="text"
+                  name="description"
+                  required
+                  value={formData.description}
+                  onChange={handleChange}
+                  placeholder="Ex: Prédio Urbano - T2"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Morada / Localização</label>
+                <input
+                  type="text"
+                  name="location"
+                  required
+                  value={formData.location}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Freguesia</label>
+                  <input
+                    type="text"
+                    name="freguesia"
+                    value={formData.freguesia}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Nº Artigo Matriz</label>
+                  <input
+                    type="text"
+                    name="matrixNumber"
+                    value={formData.matrixNumber}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Área Total</label>
+                  <input
+                    type="text"
+                    name="area"
+                    value={formData.area}
+                    onChange={handleChange}
+                    placeholder="Ex: 120 m²"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Estado do Registo</label>
+                  <select
+                    name="status"
+                    value={formData.status}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="Ativo">Ativo</option>
+                    <option value="Pendente">Pendente</option>
+                    <option value="Arquivado">Arquivado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Proprietário(s)</label>
+                {formData.owners.map((owner, idx) => (
+                  <input
+                    key={idx}
+                    type="text"
+                    value={owner}
+                    onChange={(e) => handleOwnerChange(idx, e.target.value)}
+                    placeholder="Nome completo"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg mb-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                ))}
+                <button
+                  type="button"
+                  onClick={addOwner}
+                  className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
+                >
+                  + Adicionar outro proprietário
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+                >
+                  Guardar Ficha
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================== Mount ============================== */
+    const container = document.getElementById('root');
+    if (container) {
+      const root = ReactDOM.createRoot(container);
+      root.render(<App />);
+    }
+
+    // Inicialização dos Ícones Lucide
+    setTimeout(() => {
+      if (window.lucide) {
+        window.lucide.createIcons();
+      }
+    }, 100);
+  </script>
+</body>
+</html>
