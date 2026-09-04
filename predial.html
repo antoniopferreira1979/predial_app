@@ -357,6 +357,28 @@
 </head>
 <body>
 <div id="root"></div>
+<script>
+  // Rede de segurança: se por algum motivo a app não conseguir arrancar
+  // (erro de rede, CDN bloqueado, etc.), mostra sempre uma mensagem —
+  // nunca uma página em branco sem explicação.
+  window.addEventListener('error', function(e){
+    setTimeout(function(){
+      var root = document.getElementById('root');
+      if(root && root.innerHTML.trim() === ''){
+        root.innerHTML =
+          '<div style="max-width:520px;margin:60px auto;padding:26px 28px;' +
+          'font-family:IBM Plex Sans, sans-serif;background:#FCFBF8;' +
+          'border:1px solid #DEDACD;border-radius:12px;color:#2B2B28;">' +
+          '<h2 style="color:#AE4331;margin-top:0;">A aplicação não conseguiu arrancar</h2>' +
+          '<p style="font-size:13.5px;line-height:1.6;">Ocorreu um erro inesperado ao carregar a página. ' +
+          'Abra a consola do navegador (tecla F12 → separador "Console") para ver o detalhe técnico.</p>' +
+          '<pre style="white-space:pre-wrap;background:#F3F0E8;padding:10px 12px;border-radius:8px;font-size:12px;overflow:auto;">' +
+          (e && e.message ? e.message.replace(/</g,'&lt;') : 'Erro desconhecido') +
+          '</pre></div>';
+      }
+    }, 50);
+  });
+</script>
 
 <script type="text/babel">
 const {useState, useEffect, useMemo, useRef} = React;
@@ -478,13 +500,23 @@ function seedData(){
 /* ============================== Configuração do Supabase ============================== */
 // Substitua estes dois valores pelos do seu projeto Supabase:
 // Project Settings → API → Project URL / anon public key
-const SUPABASE_URL = https://mzbxryxpaupakdjkfizl.supabase.co;
-const SUPABASE_ANON_KEY = sb_publishable_17FQtwKCRzcAtF2jLCuFfw_qTcP3IPJ;
+const SUPABASE_URL = 'https://mzbxryxpaupakdjkfizl.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_17FQtwKCRzcAtF2jLCuFfw_qTcP3IPJ';
 
 const supabaseConfigured = SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY.length > 20;
-const supabase = supabaseConfigured
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
+let supabase = null;
+let supabaseInitError = '';
+if(supabaseConfigured){
+  try{
+    if(typeof window.supabase === 'undefined' || !window.supabase.createClient){
+      supabaseInitError = 'A biblioteca do Supabase não carregou. Verifique a ligação à internet, ou se algum bloqueador de anúncios/privacidade está a impedir o carregamento de unpkg.com.';
+    } else {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+  } catch(e){
+    supabaseInitError = 'Não foi possível iniciar o Supabase: ' + (e && e.message ? e.message : String(e)) + '. Confirme que copiou corretamente o Project URL e a anon key.';
+  }
+}
 
 const TABLE_MAP = {
   imoveis: 'imoveis',
@@ -680,6 +712,9 @@ function App(){
   if(!supabaseConfigured){
     return <ConfigNeededScreen/>;
   }
+  if(supabaseInitError){
+    return <InitErrorScreen message={supabaseInitError} />;
+  }
   const {session, authError, signUp, signIn, signOut} = useAuth();
 
   if(session === undefined){
@@ -689,6 +724,19 @@ function App(){
     return <LoginScreen authError={authError} onSignUp={signUp} onSignIn={signIn} />;
   }
   return <MainApp userId={session.user.id} userEmail={session.user.email} onSignOut={signOut} />;
+}
+
+function InitErrorScreen({message}){
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="brand-word" style={{color:'var(--ink)', marginBottom:10}}>Predial</div>
+        <h2 style={{marginTop:0, color:'var(--rust)'}}>Não foi possível iniciar</h2>
+        <p style={{color:'var(--charcoal)', fontSize:13.5, lineHeight:1.6}}>{message}</p>
+        <p style={{color:'var(--gray)', fontSize:12.5}}>Se o problema persistir, abra a consola do navegador (tecla F12 → separador "Console") e verifique se há alguma mensagem a vermelho — isso ajuda a identificar a causa exata.</p>
+      </div>
+    </div>
+  );
 }
 
 function ConfigNeededScreen(){
