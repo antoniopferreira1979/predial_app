@@ -1,0 +1,2554 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Predial — Gestão de Arrendamentos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#16283D;
+    --azulejo:#2F6690;
+    --azulejo-light:#EAF1F5;
+    --telha:#C1652F;
+    --telha-light:#FBEBE0;
+    --limestone:#F3F0E8;
+    --paper:#FCFBF8;
+    --verdigris:#4C7A6B;
+    --verdigris-light:#E7F0EC;
+    --amber:#B8862E;
+    --amber-light:#FBF1DF;
+    --rust:#AE4331;
+    --rust-light:#FAE7E2;
+    --charcoal:#2B2B28;
+    --gray:#7C7A72;
+    --line:#DEDACD;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--limestone);
+    color:var(--charcoal);
+    font-family:'IBM Plex Sans', -apple-system, sans-serif;
+    font-size:14px;
+    line-height:1.5;
+  }
+  #root{min-height:100vh;}
+  .app{display:flex;min-height:100vh;}
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:232px;
+    flex-shrink:0;
+    background:var(--ink);
+    color:#EDEFF2;
+    display:flex;
+    flex-direction:column;
+    position:relative;
+    overflow:hidden;
+  }
+  .sidebar::before{
+    content:"";
+    position:absolute; top:0; left:0; right:0; height:120px;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 22px),
+      repeating-linear-gradient(-45deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 22px);
+    pointer-events:none;
+  }
+  .brand{
+    padding:26px 22px 22px;
+    position:relative;
+  }
+  .brand-word{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:26px;
+    letter-spacing:0.2px;
+    color:#fff;
+  }
+  .brand-sub{
+    margin-top:4px;
+    font-size:11.5px;
+    color:#A9B7C6;
+    letter-spacing:0.3px;
+  }
+  .nav{padding:8px 12px; display:flex; flex-direction:column; gap:2px;}
+  .nav-item{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 12px;
+    border-radius:7px;
+    color:#C7D0DA;
+    cursor:pointer;
+    font-size:13.5px;
+    font-weight:500;
+    border:none;
+    background:transparent;
+    text-align:left;
+    width:100%;
+  }
+  .nav-item:hover{background:rgba(255,255,255,0.06); color:#fff;}
+  .nav-item.active{background:var(--azulejo); color:#fff;}
+  .nav-icon{width:18px; text-align:center; font-size:14px; opacity:0.9;}
+  .nav-count{
+    margin-left:auto;
+    font-size:11px;
+    background:rgba(255,255,255,0.14);
+    padding:1px 7px;
+    border-radius:20px;
+    color:#fff;
+  }
+  .nav-count.alert{background:var(--rust);}
+  .sidebar-foot{
+    margin-top:auto;
+    padding:16px 22px 22px;
+    font-size:11px;
+    color:#7E8CA0;
+    border-top:1px solid rgba(255,255,255,0.08);
+  }
+
+  /* ---------- Main ---------- */
+  .main{flex:1; min-width:0; display:flex; flex-direction:column;}
+  .topbar{
+    padding:22px 34px 18px;
+    display:flex; align-items:baseline; justify-content:space-between;
+    border-bottom:1px solid var(--line);
+    background:var(--paper);
+  }
+  .topbar h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:26px;
+    margin:0;
+    color:var(--ink);
+  }
+  .topbar p{margin:4px 0 0; color:var(--gray); font-size:13px;}
+  .btn{
+    font-family:inherit;
+    font-size:13px;
+    font-weight:600;
+    padding:9px 16px;
+    border-radius:7px;
+    border:1px solid transparent;
+    cursor:pointer;
+  }
+  .btn-primary{background:var(--azulejo); color:#fff;}
+  .btn-primary:hover{background:#28577D;}
+  .btn-ghost{background:transparent; border-color:var(--line); color:var(--ink);}
+  .btn-ghost:hover{background:var(--azulejo-light);}
+  .btn-danger-ghost{background:transparent; border-color:var(--rust); color:var(--rust);}
+  .btn-danger-ghost:hover{background:var(--rust-light);}
+  .btn-sm{padding:6px 11px; font-size:12px;}
+
+  .content{padding:26px 34px 60px; flex:1;}
+
+  /* ---------- Dashboard ---------- */
+  .kpi-row{display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr; gap:16px; margin-bottom:20px;}
+  .kpi-hero{
+    background:var(--ink);
+    color:#fff;
+    border-radius:10px;
+    padding:22px 24px;
+    position:relative;
+    overflow:hidden;
+  }
+  .kpi-hero .label{font-size:12.5px; color:#AAB8C6; font-weight:500;}
+  .kpi-hero .value{font-family:'Fraunces', serif; font-size:36px; font-weight:600; margin-top:6px;}
+  .kpi-hero .foot{margin-top:10px; font-size:12px; color:#9CB3C6;}
+  .kpi-card{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px 18px;
+    display:flex; flex-direction:column; justify-content:center;
+  }
+  .kpi-card .label{font-size:12px; color:var(--gray); font-weight:500;}
+  .kpi-card .value{font-size:25px; font-weight:700; margin-top:6px; color:var(--ink);}
+  .kpi-card .value.telha{color:var(--telha);}
+  .kpi-card .value.rust{color:var(--rust);}
+  .kpi-card .value.verdigris{color:var(--verdigris);}
+
+  .dash-grid{display:grid; grid-template-columns:1.3fr 1fr; gap:18px;}
+  .panel{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px 20px;
+    margin-bottom:18px;
+  }
+  .panel h3{
+    margin:0 0 12px;
+    font-size:14.5px;
+    font-weight:700;
+    color:var(--ink);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .panel h3 .muted{font-size:11.5px; color:var(--gray); font-weight:500;}
+
+  .list-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:9px 0;
+    border-bottom:1px solid var(--line);
+    font-size:13px;
+  }
+  .list-row:last-child{border-bottom:none;}
+  .list-row .t1{font-weight:600; color:var(--ink);}
+  .list-row .t2{color:var(--gray); font-size:12px;}
+
+  .empty{
+    padding:22px 10px;
+    text-align:center;
+    color:var(--gray);
+    font-size:13px;
+  }
+
+  /* ---------- Tags/badges ---------- */
+  .tag{
+    display:inline-block;
+    padding:2px 9px;
+    border-radius:20px;
+    font-size:11.5px;
+    font-weight:600;
+  }
+  .tag-verdigris{background:var(--verdigris-light); color:var(--verdigris);}
+  .tag-rust{background:var(--rust-light); color:var(--rust);}
+  .tag-amber{background:var(--amber-light); color:var(--amber);}
+  .tag-azulejo{background:var(--azulejo-light); color:var(--azulejo);}
+  .tag-gray{background:#ECE9DF; color:var(--gray);}
+
+  /* ---------- Table ---------- */
+  .table-wrap{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    overflow:hidden;
+  }
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  thead th{
+    text-align:left;
+    font-size:11.5px;
+    text-transform:none;
+    color:var(--gray);
+    font-weight:600;
+    padding:12px 16px;
+    border-bottom:1px solid var(--line);
+    background:#F8F6F0;
+  }
+  tbody td{
+    padding:12px 16px;
+    border-bottom:1px solid var(--line);
+    color:var(--charcoal);
+    vertical-align:middle;
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:#FAF8F2;}
+  .row-actions{display:flex; gap:6px;}
+  .icon-btn{
+    border:1px solid var(--line);
+    background:#fff;
+    border-radius:6px;
+    padding:5px 8px;
+    cursor:pointer;
+    font-size:12px;
+    color:var(--ink);
+  }
+  .icon-btn:hover{background:var(--azulejo-light);}
+  .icon-btn.danger:hover{background:var(--rust-light); border-color:var(--rust); color:var(--rust);}
+
+  .toolbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:12px;}
+  .search{
+    padding:8px 12px;
+    border:1px solid var(--line);
+    border-radius:7px;
+    font-size:13px;
+    font-family:inherit;
+    width:240px;
+    background:#fff;
+  }
+
+  /* ---------- Modal / Form ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(22,40,61,0.44);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding:44px 20px; overflow-y:auto; z-index:50;
+  }
+  .modal{
+    background:var(--paper);
+    border-radius:12px;
+    width:100%; max-width:560px;
+    padding:26px 28px 24px;
+    box-shadow:0 18px 50px rgba(22,40,61,0.28);
+  }
+  .modal h2{
+    font-family:'Fraunces', serif;
+    font-size:20px;
+    margin:0 0 18px;
+    color:var(--ink);
+  }
+  .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .field{display:flex; flex-direction:column; gap:5px; margin-bottom:2px;}
+  .field.full{grid-column:1/-1;}
+  .field label{font-size:12px; font-weight:600; color:var(--ink);}
+  .field input, .field select, .field textarea{
+    font-family:inherit;
+    font-size:13px;
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:7px;
+    background:#fff;
+    color:var(--charcoal);
+  }
+  .field textarea{resize:vertical; min-height:56px;}
+  .field input:focus, .field select:focus, .field textarea:focus{
+    outline:2px solid var(--azulejo); outline-offset:1px;
+  }
+  .modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:20px;}
+
+  /* ---------- Matches (waitlist <-> vago) ---------- */
+  .match-badge{
+    display:inline-flex; align-items:center; gap:5px;
+    background:var(--telha-light); color:var(--telha);
+    font-size:11.5px; font-weight:600;
+    padding:3px 9px; border-radius:20px;
+    cursor:pointer; border:none;
+  }
+  .match-list{margin-top:8px; padding:10px 12px; background:var(--limestone); border-radius:8px;}
+  .match-list .item{font-size:12.5px; padding:4px 0; display:flex; justify-content:space-between;}
+
+  .section-intro{color:var(--gray); font-size:13px; margin:-8px 0 18px;}
+
+  /* ---------- Auth screen ---------- */
+  .auth-screen{
+    min-height:100vh;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--limestone);
+    padding:20px;
+  }
+  .auth-card{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:32px 30px;
+    width:100%; max-width:380px;
+    box-shadow:0 18px 50px rgba(22,40,61,0.10);
+  }
+  .auth-card code{
+    background:var(--limestone);
+    padding:1px 5px;
+    border-radius:4px;
+    font-size:12px;
+  }
+
+  @media (max-width:900px){
+    .sidebar{width:72px;}
+    .brand-word{font-size:0;}
+    .brand-word::before{content:"P"; font-size:24px;}
+    .brand-sub{display:none;}
+    .nav-item span.label{display:none;}
+    .kpi-row{grid-template-columns:1fr 1fr;}
+    .dash-grid{grid-template-columns:1fr;}
+    .form-grid{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const {useState, useEffect, useMemo, useRef} = React;
+
+/* ============================== Helpers ============================== */
+const uid = (p) => p + '-' + Math.random().toString(36).slice(2,8);
+const todayISO = () => new Date().toISOString().slice(0,10);
+const fmtEUR = (v) => (v===''||v===null||v===undefined||isNaN(v)) ? '—' :
+  new Intl.NumberFormat('pt-PT',{style:'currency',currency:'EUR'}).format(Number(v));
+const fmtDate = (v) => {
+  if(!v) return '—';
+  const d = new Date(v+'T00:00:00');
+  if(isNaN(d)) return v;
+  return d.toLocaleDateString('pt-PT',{day:'2-digit',month:'short',year:'numeric'});
+};
+const daysUntil = (v) => {
+  if(!v) return null;
+  const d = new Date(v+'T00:00:00');
+  const now = new Date(); now.setHours(0,0,0,0);
+  return Math.round((d-now)/86400000);
+};
+
+const MAX_ANEXO_BYTES = 2 * 1024 * 1024; // 2MB por PDF anexado (limite prudente para o espaço do navegador)
+
+const TIPOS_VISTORIA = ['Entrada','Saída','Periódica'];
+const CATEGORIAS_DESPESA = ['Obras','Seguro','Condomínio','IMI','Manutenção','Comissões/Gestão','Outra'];
+
+// Comprime e redimensiona uma imagem no browser antes de guardar (reduz muito o espaço ocupado)
+function compressImageFile(file, maxDim, quality){
+  maxDim = maxDim || 1280;
+  quality = quality || 0.72;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if(w > maxDim || h > maxDim){
+          if(w > h){ h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve({base64: dataUrl.split(',')[1] || '', tipo:'image/jpeg'});
+      };
+      img.onerror = () => reject(new Error('Não foi possível processar a imagem.'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('Não foi possível ler o ficheiro.'));
+    reader.readAsDataURL(file);
+  });
+}
+function base64ToBlob(base64, type){
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for(let i=0;i<byteChars.length;i++){ byteNumbers[i] = byteChars.charCodeAt(i); }
+  return new Blob([new Uint8Array(byteNumbers)], {type: type || 'application/pdf'});
+}
+
+const TIPOS_IMOVEL = ['Apartamento','Moradia','Loja','Escritório','Garagem','Terreno'];
+const ESTADOS_IMOVEL = ['Ocupado','Vago','Em Manutenção'];
+const PRIORIDADES = ['Alta','Média','Baixa'];
+const ESTADOS_MANUT = ['Pendente','Em Curso','Concluído'];
+const ESTADOS_WAITLIST = ['Ativo','Contactado','Convertido','Inativo'];
+
+/* ============================== Seed data ============================== */
+function seedData(){
+  const imoveis = [
+    {id:'IM001', nome:'Apartamento Alvalade T2', morada:'Av. Rio de Janeiro 45, Lisboa', tipo:'Apartamento', area:75, quartos:2, estado:'Ocupado', renda:950, proprietario:'João Silva', notas:'Renovado em 2023'},
+    {id:'IM002', nome:'Loja Baixa Chiado', morada:'Rua Garrett 12, Lisboa', tipo:'Loja', area:40, quartos:0, estado:'Vago', renda:1400, proprietario:'João Silva', notas:''},
+    {id:'IM003', nome:'Moradia Sintra V3', morada:'Rua das Flores 8, Sintra', tipo:'Moradia', area:180, quartos:3, estado:'Vago', renda:1600, proprietario:'Ana Costa', notas:'Jardim privado'},
+  ];
+  const inquilinos = [
+    {id:'INQ001', nome:'Maria Ferreira', nif:'123456789', telefone:'912345678', email:'maria.ferreira@email.com', imovelId:'IM001', dataInicio:'2024-01-01', notas:''},
+  ];
+  const contratos = [
+    {id:'CT001', imovelId:'IM001', inquilinoId:'INQ001', dataInicio:'2024-01-01', dataFim:'2027-12-31', renda:950, caucao:950, prazoAvisoRescisao:120, rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', notas:''},
+  ];
+  const atualizacoesRenda = [
+    {id:'AR001', contratoId:'CT001', data:'2025-01-01', valorAnterior:900, valorNovo:950, motivo:'Atualização anual (coeficiente de inflação)'},
+  ];
+  const pagamentos = [
+    {id:'PG001', contratoId:'CT001', mesRef:'2026-08', valorDevido:950, dataVencimento:'2026-08-08', dataPagamento:'2026-08-05', valorPago:950, notas:''},
+    {id:'PG002', contratoId:'CT001', mesRef:'2026-09', valorDevido:950, dataVencimento:'2026-09-08', dataPagamento:'', valorPago:'', notas:''},
+  ];
+  const manutencoes = [
+    {id:'MN001', imovelId:'IM003', dataPedido:'2026-08-20', descricao:'Reparação de canalização na cozinha', prioridade:'Alta', estado:'Em Curso', custo:120, fornecedor:'Canalizações Rápidas Lda'},
+  ];
+  const tarefas = [
+    {id:'TF001', titulo:'Renovar seguro multirriscos — IM001', dataLimite:'2026-09-15', concluida:false, notas:''},
+    {id:'TF002', titulo:'Confirmar manutenção da caldeira — IM003', dataLimite:'2026-09-05', concluida:false, notas:''},
+  ];
+  const documentos = [
+    {id:'DC001', nome:'Caderneta Predial — IM001', categoria:'Escritura/Registo', imovelId:'IM001', data:'2024-01-01', notas:''},
+  ];
+  const listaEspera = [
+    {id:'LE001', nome:'Sofia Martins', telefone:'913111222', email:'sofia.martins@email.com', tipo:'Loja', zona:'Chiado', rendaMax:1500, quartosMin:0, dataRegisto:'2026-08-10', estado:'Ativo', notas:'Procura loja para ateliê de costura'},
+    {id:'LE002', nome:'Diogo Pereira', telefone:'914222333', email:'diogo.pereira@email.com', tipo:'Moradia', zona:'Sintra', rendaMax:1700, quartosMin:3, dataRegisto:'2026-08-18', estado:'Ativo', notas:''},
+    {id:'LE003', nome:'Carla e Nuno Antunes', telefone:'915333444', email:'carla.antunes@email.com', tipo:'Apartamento', zona:'Lisboa', rendaMax:1000, quartosMin:2, dataRegisto:'2026-07-30', estado:'Contactado', notas:'Já visitaram IM001 antes de ficar ocupado'},
+  ];
+  const proprietarios = [
+    {id:'PR001', imovelId:'IM001', nome:'João Silva', nif:'111222333', percentagem:1, contacto:'912000111', notas:'Proprietário único'},
+    {id:'PR002', imovelId:'IM002', nome:'João Silva', nif:'111222333', percentagem:1, contacto:'912000111', notas:'Proprietário único'},
+    {id:'PR003', imovelId:'IM003', nome:'Ana Costa', nif:'222333444', percentagem:0.6, contacto:'913000222', notas:'Co-proprietária'},
+    {id:'PR004', imovelId:'IM003', nome:'Rui Costa', nif:'333444555', percentagem:0.4, contacto:'914000333', notas:'Co-proprietário (irmão)'},
+  ];
+  const vistorias = [
+    {id:'VT001', imovelId:'IM001', tipo:'Entrada', data:'2024-01-01', descricao:'Vistoria de entrada com a inquilina Maria Ferreira. Imóvel em bom estado geral.', notas:'', fotos:[]},
+  ];
+  const despesas = [
+    {id:'DP001', imovelId:'IM003', data:'2026-08-22', anoFiscal:2026, categoria:'Obras', descricao:'Reparação de canalização na cozinha', valor:120, dedutivel:true, notas:'Relacionado com o pedido de manutenção MN001', temComprovativo:false, comprovativoNome:'', comprovativoTipo:''},
+  ];
+  return {imoveis, inquilinos, contratos, pagamentos, manutencoes, tarefas, documentos, listaEspera, proprietarios, atualizacoesRenda, vistorias, despesas};
+}
+
+/* ============================== Configuração do Supabase ============================== */
+// Substitua estes dois valores pelos do seu projeto Supabase:
+// Project Settings → API → Project URL / anon public key
+const SUPABASE_URL = https://mzbxryxpaupakdjkfizl.supabase.co;
+const SUPABASE_ANON_KEY = sb_publishable_17FQtwKCRzcAtF2jLCuFfw_qTcP3IPJ;
+
+const supabaseConfigured = SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY.length > 20;
+const supabase = supabaseConfigured
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+const TABLE_MAP = {
+  imoveis: 'imoveis',
+  inquilinos: 'inquilinos',
+  contratos: 'contratos',
+  pagamentos: 'pagamentos',
+  manutencoes: 'manutencoes',
+  tarefas: 'tarefas',
+  documentos: 'documentos',
+  listaEspera: 'lista_espera',
+  proprietarios: 'proprietarios',
+  atualizacoesRenda: 'atualizacoes_renda',
+  vistorias: 'vistorias',
+  despesas: 'despesas',
+};
+
+/* ============================== Storage layer (Supabase Storage — anexos) ============================== */
+function storageAvailable(){
+  return !!(supabase && currentSession && currentSession.user);
+}
+let currentSession = null; // definida pelo useAuth() ao autenticar
+
+function blobToBase64(blob){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function storeGet(key){
+  if(!storageAvailable()) return null;
+  const path = currentSession.user.id + '/' + key;
+  const { data, error } = await supabase.storage.from('anexos').download(path);
+  if(error || !data) return null;
+  return await blobToBase64(data);
+}
+async function storeSet(key, base64Value){
+  if(!storageAvailable()) throw new Error('Sem sessão iniciada.');
+  const path = currentSession.user.id + '/' + key;
+  const blob = base64ToBlob(base64Value, 'application/octet-stream');
+  const { error } = await supabase.storage.from('anexos').upload(path, blob, { upsert: true });
+  if(error) throw error;
+}
+async function storeDelete(key){
+  if(!storageAvailable()) return;
+  const path = currentSession.user.id + '/' + key;
+  try{ await supabase.storage.from('anexos').remove([path]); } catch(e){ /* ignora */ }
+}
+
+/* ============================== Autenticação ============================== */
+function useAuth(){
+  const [session, setSession] = useState(undefined); // undefined = a carregar, null = sem sessão
+  const [authError, setAuthError] = useState('');
+
+  useEffect(() => {
+    if(!supabase){ setSession(null); return; }
+    supabase.auth.getSession().then(({data}) => {
+      currentSession = data.session;
+      setSession(data.session);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => {
+      currentSession = s;
+      setSession(s);
+    });
+    return () => listener && listener.subscription && listener.subscription.unsubscribe();
+  }, []);
+
+  const signUp = async (email, password) => {
+    setAuthError('');
+    const { error } = await supabase.auth.signUp({ email, password });
+    if(error) setAuthError(error.message);
+    return !error;
+  };
+  const signIn = async (email, password) => {
+    setAuthError('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if(error) setAuthError(error.message);
+    return !error;
+  };
+  const signOut = async () => { await supabase.auth.signOut(); };
+
+  return { session, authError, signUp, signIn, signOut };
+}
+
+/* ============================== Storage hook (dados sincronizados via Supabase) ============================== */
+function useAppData(userId){
+  const [data, setData] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const [syncError, setSyncError] = useState('');
+
+  useEffect(() => {
+    if(!userId){ setData(null); setLoaded(false); return; }
+    setLoaded(false);
+    (async () => {
+      try{
+        const keys = Object.keys(TABLE_MAP);
+        const results = await Promise.all(keys.map(async (key) => {
+          const { data: rows, error } = await supabase.from(TABLE_MAP[key]).select('data');
+          if(error) throw error;
+          return [key, (rows||[]).map(r => r.data)];
+        }));
+        const assembled = {};
+        results.forEach(([key, arr]) => { assembled[key] = arr; });
+        setData(assembled);
+      } catch(e){
+        setSyncError('Não foi possível carregar os dados (' + ((e&&e.message)||'erro desconhecido') + ').');
+        setData(seedData()); // fallback local, apenas nesta sessão — não é guardado
+      } finally {
+        setLoaded(true);
+      }
+    })();
+  }, [userId]);
+
+  return [data, setData, loaded, syncError];
+}
+
+async function persistUpsert(key, item, userId){
+  const table = TABLE_MAP[key];
+  if(!table) return;
+  const { error } = await supabase.from(table).upsert({ id: item.id, user_id: userId, data: item, updated_at: new Date().toISOString() });
+  if(error) alert('Não foi possível guardar a alteração (' + error.message + '). Tente novamente.');
+}
+async function persistDelete(key, id){
+  const table = TABLE_MAP[key];
+  if(!table) return;
+  const { error } = await supabase.from(table).delete().eq('id', id);
+  if(error) alert('Não foi possível remover (' + error.message + '). Tente novamente.');
+}
+
+/* ============================== Small UI atoms ============================== */
+function Tag({children, kind}){
+  return <span className={'tag tag-'+kind}>{children}</span>;
+}
+
+function estadoImovelTag(estado){
+  if(estado==='Ocupado') return <Tag kind="verdigris">Ocupado</Tag>;
+  if(estado==='Vago') return <Tag kind="rust">Vago</Tag>;
+  return <Tag kind="amber">Em Manutenção</Tag>;
+}
+
+function estadoManutTag(estado){
+  if(estado==='Concluído') return <Tag kind="verdigris">Concluído</Tag>;
+  if(estado==='Em Curso') return <Tag kind="amber">Em Curso</Tag>;
+  return <Tag kind="rust">Pendente</Tag>;
+}
+
+function estadoPagamento(p){
+  if(p.valorPago){
+    if(p.dataPagamento && p.dataVencimento && p.dataPagamento > p.dataVencimento) return {label:'Pago com Atraso', kind:'amber'};
+    return {label:'Pago', kind:'verdigris'};
+  }
+  if(p.dataVencimento && p.dataVencimento < todayISO()) return {label:'Em Atraso', kind:'rust'};
+  return {label:'Pendente', kind:'gray'};
+}
+
+function estadoWaitlistTag(estado){
+  if(estado==='Convertido') return <Tag kind="verdigris">Convertido</Tag>;
+  if(estado==='Contactado') return <Tag kind="azulejo">Contactado</Tag>;
+  if(estado==='Inativo') return <Tag kind="gray">Inativo</Tag>;
+  return <Tag kind="amber">Ativo</Tag>;
+}
+
+/* ============================== Modal wrapper ============================== */
+function Modal({title, onClose, children}){
+  return (
+    <div className="overlay" onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div className="modal">
+        <h2>{title}</h2>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== Waitlist matching ============================== */
+function matchesImovel(entry, imovel){
+  if(imovel.estado !== 'Vago') return false;
+  if(entry.tipo && entry.tipo !== imovel.tipo) return false;
+  if(entry.zona && !(imovel.morada||'').toLowerCase().includes(entry.zona.toLowerCase())) return false;
+  if(entry.rendaMax && Number(imovel.renda) > Number(entry.rendaMax)) return false;
+  if(entry.quartosMin && Number(imovel.quartos||0) < Number(entry.quartosMin)) return false;
+  return true;
+}
+
+function percentByImovel(proprietarios, imovelId){
+  return proprietarios.filter(p=>p.imovelId===imovelId).reduce((s,p)=>s+Number(p.percentagem||0),0);
+}
+
+/* ============================== App ============================== */
+function App(){
+  if(!supabaseConfigured){
+    return <ConfigNeededScreen/>;
+  }
+  const {session, authError, signUp, signIn, signOut} = useAuth();
+
+  if(session === undefined){
+    return <div className="auth-screen"><div className="auth-card"><div className="brand-word" style={{color:'var(--ink)'}}>Predial</div><p style={{color:'var(--gray)'}}>A verificar sessão…</p></div></div>;
+  }
+  if(!session){
+    return <LoginScreen authError={authError} onSignUp={signUp} onSignIn={signIn} />;
+  }
+  return <MainApp userId={session.user.id} userEmail={session.user.email} onSignOut={signOut} />;
+}
+
+function ConfigNeededScreen(){
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="brand-word" style={{color:'var(--ink)', marginBottom:10}}>Predial</div>
+        <h2 style={{marginTop:0}}>Configuração necessária</h2>
+        <p style={{color:'var(--charcoal)', fontSize:13.5, lineHeight:1.6}}>
+          Esta app ainda não está ligada a um projeto Supabase. Abra o ficheiro <code>predial.html</code> num editor de texto
+          e substitua, perto do início do bloco <code>&lt;script type="text/babel"&gt;</code>, os valores de{' '}
+          <code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code> pelos do seu projeto
+          (Supabase → Project Settings → API).
+        </p>
+        <p style={{color:'var(--gray)', fontSize:12.5}}>Também precisa de correr o ficheiro <code>supabase-schema.sql</code> no SQL Editor do Supabase antes de usar a app.</p>
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({authError, onSignUp, onSignIn}){
+  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState('');
+
+  const submit = async () => {
+    setBusy(true);
+    setInfo('');
+    if(mode === 'signup'){
+      const ok = await onSignUp(email, password);
+      if(ok) setInfo('Conta criada. Verifique o seu email para confirmar, depois entre normalmente.');
+    } else {
+      await onSignIn(email, password);
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="brand-word" style={{color:'var(--ink)', marginBottom:2}}>Predial</div>
+        <div style={{color:'var(--gray)', fontSize:12.5, marginBottom:20}}>Gestão de Arrendamentos</div>
+
+        <div style={{display:'flex', gap:8, marginBottom:18}}>
+          <button className={mode==='signin' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'} onClick={()=>setMode('signin')}>Entrar</button>
+          <button className={mode==='signup' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'} onClick={()=>setMode('signup')}>Criar conta</button>
+        </div>
+
+        <div className="field full" style={{marginBottom:12}}>
+          <label>Email</label>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="voce@email.com" />
+        </div>
+        <div className="field full" style={{marginBottom:16}}>
+          <label>Palavra-passe</label>
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="mínimo 6 caracteres" />
+        </div>
+
+        {authError && <div style={{color:'var(--rust)', fontSize:12.5, marginBottom:12}}>{authError}</div>}
+        {info && <div style={{color:'var(--verdigris)', fontSize:12.5, marginBottom:12}}>{info}</div>}
+
+        <button className="btn btn-primary" style={{width:'100%'}} disabled={busy || !email || !password} onClick={submit}>
+          {busy ? 'A processar…' : (mode==='signup' ? 'Criar conta' : 'Entrar')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MainApp({userId, userEmail, onSignOut}){
+  const [data, setData, loaded, syncError] = useAppData(userId);
+  const [view, setView] = useState('dashboard');
+  const [modal, setModal] = useState(null); // {type, item}
+
+  if(!loaded || !data){
+    return <div style={{padding:'60px', fontFamily:'IBM Plex Sans, sans-serif', color:'#7C7A72'}}>A carregar o Predial…</div>;
+  }
+
+  const update = (key, fn) => setData(d => ({...d, [key]: fn(d[key])}));
+
+  const addOrEdit = (key, item) => {
+    update(key, list => {
+      const exists = list.some(x => x.id === item.id);
+      return exists ? list.map(x => x.id===item.id ? item : x) : [...list, item];
+    });
+    persistUpsert(key, item, userId);
+  };
+  const remove = (key, id) => {
+    update(key, list => list.filter(x => x.id!==id));
+    persistDelete(key, id);
+  };
+
+  const NAV = [
+    {id:'dashboard', label:'Escritório', icon:'🏛'},
+    {id:'imoveis', label:'Imóveis', icon:'🏠'},
+    {id:'proprietarios', label:'Proprietários', icon:'🧾'},
+    {id:'inquilinos', label:'Inquilinos', icon:'👤'},
+    {id:'contratos', label:'Contratos', icon:'📄'},
+    {id:'pagamentos', label:'Pagamentos', icon:'€'},
+    {id:'manutencao', label:'Manutenção', icon:'🔧'},
+    {id:'vistorias', label:'Vistorias', icon:'📷'},
+    {id:'despesas', label:'Despesas', icon:'📊'},
+    {id:'listaespera', label:'Lista de Espera', icon:'⏳'},
+    {id:'tarefas', label:'Tarefas', icon:'✓'},
+    {id:'documentos', label:'Documentos', icon:'📁'},
+  ];
+
+  const counts = {
+    imoveis: data.imoveis.length,
+    inquilinos: data.inquilinos.length,
+    contratos: data.contratos.length,
+    pagamentos: data.pagamentos.filter(p => estadoPagamento(p).label==='Em Atraso').length,
+    manutencao: data.manutencoes.filter(m => m.estado!=='Concluído').length,
+    proprietarios: data.imoveis.filter(im => {
+      const soma = percentByImovel(data.proprietarios, im.id);
+      return soma>0 && Math.abs(soma-1) > 0.001;
+    }).length,
+    listaespera: data.listaEspera.filter(w => w.estado==='Ativo').length,
+    tarefas: data.tarefas.filter(t => !t.concluida).length,
+    documentos: data.documentos.length,
+  };
+
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-word">Predial</div>
+          <div className="brand-sub">Gestão de Arrendamentos</div>
+        </div>
+        <nav className="nav">
+          {NAV.map(n => (
+            <button key={n.id} className={'nav-item'+(view===n.id?' active':'')} onClick={()=>setView(n.id)}>
+              <span className="nav-icon">{n.icon}</span>
+              <span className="label">{n.label}</span>
+              {n.id==='pagamentos' && counts.pagamentos>0 && <span className="nav-count alert">{counts.pagamentos}</span>}
+              {n.id==='manutencao' && counts.manutencao>0 && <span className="nav-count">{counts.manutencao}</span>}
+              {n.id==='proprietarios' && counts.proprietarios>0 && <span className="nav-count alert">{counts.proprietarios}</span>}
+              {n.id==='listaespera' && counts.listaespera>0 && <span className="nav-count">{counts.listaespera}</span>}
+              {n.id==='tarefas' && counts.tarefas>0 && <span className="nav-count">{counts.tarefas}</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          {syncError ? <div style={{color:'#F3C7BC', marginBottom:8}}>⚠ {syncError}</div> : null}
+          <div style={{marginBottom:8, wordBreak:'break-all'}}>{userEmail}</div>
+          <button className="btn btn-ghost btn-sm" style={{color:'#EDEFF2', borderColor:'rgba(255,255,255,0.25)'}} onClick={onSignOut}>Sair</button>
+        </div>
+      </aside>
+
+      <main className="main">
+        {view==='dashboard' && <Dashboard data={data} setView={setView} />}
+        {view==='imoveis' && <ImoveisView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} setView={setView} />}
+        {view==='proprietarios' && <ProprietariosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='inquilinos' && <InquilinosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='contratos' && <ContratosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='pagamentos' && <PagamentosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='manutencao' && <ManutencaoView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='vistorias' && <VistoriasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='despesas' && <DespesasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='listaespera' && <ListaEsperaView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='tarefas' && <TarefasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='documentos' && <DocumentosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+      </main>
+    </div>
+  );
+}
+
+/* ============================== Dashboard ============================== */
+function Dashboard({data, setView}){
+  const ocupados = data.imoveis.filter(i=>i.estado==='Ocupado').length;
+  const vagos = data.imoveis.filter(i=>i.estado==='Vago').length;
+  const total = data.imoveis.length;
+  const receita = data.imoveis.reduce((s,i)=>s+Number(i.renda||0),0);
+  const taxaOcup = total ? Math.round((ocupados/total)*100) : 0;
+  const emAtraso = data.pagamentos.filter(p=>estadoPagamento(p).label==='Em Atraso');
+  const tarefasPendentes = data.tarefas.filter(t=>!t.concluida).sort((a,b)=>(a.dataLimite||'').localeCompare(b.dataLimite||''));
+  const proximosPagamentos = data.pagamentos
+    .filter(p=>!p.valorPago)
+    .sort((a,b)=>(a.dataVencimento||'').localeCompare(b.dataVencimento||''))
+    .slice(0,5);
+  const esperaAtivos = data.listaEspera.filter(w=>w.estado==='Ativo');
+  const vagosComInteressados = data.imoveis.filter(im => im.estado==='Vago' && esperaAtivos.some(w=>matchesImovel(w,im)));
+
+  const contratoOf = (id) => data.contratos.find(c=>c.id===id);
+  const imovelOf = (id) => data.imoveis.find(i=>i.id===id);
+
+  return (
+    <React.Fragment>
+      <div className="topbar">
+        <div>
+          <h1>Escritório</h1>
+          <p>Uma visão geral da sua atividade de arrendamento.</p>
+        </div>
+      </div>
+      <div className="content">
+        <div className="kpi-row">
+          <div className="kpi-hero">
+            <div className="label">Receita mensal potencial</div>
+            <div className="value">{fmtEUR(receita)}</div>
+            <div className="foot">{total} imóve{total===1?'l':'is'} sob gestão · {taxaOcup}% de ocupação</div>
+          </div>
+          <div className="kpi-card">
+            <div className="label">Imóveis ocupados</div>
+            <div className="value verdigris">{ocupados}</div>
+          </div>
+          <div className="kpi-card">
+            <div className="label">Imóveis vagos</div>
+            <div className="value rust">{vagos}</div>
+          </div>
+          <div className="kpi-card">
+            <div className="label">Pagamentos em atraso</div>
+            <div className="value rust">{emAtraso.length}</div>
+          </div>
+        </div>
+
+        <div className="dash-grid">
+          <div>
+            <div className="panel">
+              <h3>Próximos pagamentos <span className="muted">por vencer</span></h3>
+              {proximosPagamentos.length===0 && <div className="empty">Sem pagamentos pendentes de registo.</div>}
+              {proximosPagamentos.map(p=>{
+                const ct = contratoOf(p.contratoId);
+                const im = ct ? imovelOf(ct.imovelId) : null;
+                const est = estadoPagamento(p);
+                return (
+                  <div className="list-row" key={p.id}>
+                    <div>
+                      <div className="t1">{im ? im.nome : p.contratoId} — {p.mesRef}</div>
+                      <div className="t2">Vencimento: {fmtDate(p.dataVencimento)}</div>
+                    </div>
+                    <Tag kind={est.kind}>{est.label}</Tag>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="panel">
+              <h3>Lista de espera <span className="muted">{esperaAtivos.length} interessados ativos</span></h3>
+              {vagosComInteressados.length===0 && <div className="empty">Nenhum imóvel vago corresponde, por agora, a um interessado em espera.</div>}
+              {vagosComInteressados.map(im=>{
+                const matches = esperaAtivos.filter(w=>matchesImovel(w,im));
+                return (
+                  <div className="list-row" key={im.id}>
+                    <div>
+                      <div className="t1">{im.nome}</div>
+                      <div className="t2">{matches.length} interessado{matches.length!==1?'s':''} compatíve{matches.length!==1?'is':'l'} · {fmtEUR(im.renda)}</div>
+                    </div>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setView('listaespera')}>Ver</button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="panel">
+              <h3>Tarefas pendentes</h3>
+              {tarefasPendentes.length===0 && <div className="empty">Sem tarefas pendentes. 🎉</div>}
+              {tarefasPendentes.slice(0,6).map(t=>{
+                const d = daysUntil(t.dataLimite);
+                const atrasada = d!==null && d<0;
+                return (
+                  <div className="list-row" key={t.id}>
+                    <div>
+                      <div className="t1">{t.titulo}</div>
+                      <div className="t2">{t.dataLimite ? fmtDate(t.dataLimite) : 'Sem prazo'}</div>
+                    </div>
+                    {atrasada ? <Tag kind="rust">Atrasada</Tag> : (d!==null && d<=7 ? <Tag kind="amber">Em breve</Tag> : null)}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="panel">
+              <h3>Manutenção em curso</h3>
+              {data.manutencoes.filter(m=>m.estado!=='Concluído').length===0 && <div className="empty">Sem pedidos de manutenção ativos.</div>}
+              {data.manutencoes.filter(m=>m.estado!=='Concluído').slice(0,6).map(m=>{
+                const im = imovelOf(m.imovelId);
+                return (
+                  <div className="list-row" key={m.id}>
+                    <div>
+                      <div className="t1">{im ? im.nome : m.imovelId}</div>
+                      <div className="t2">{m.descricao}</div>
+                    </div>
+                    {estadoManutTag(m.estado)}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Generic list page shell ============================== */
+function PageShell({title, subtitle, onNew, newLabel, children}){
+  return (
+    <React.Fragment>
+      <div className="topbar">
+        <div>
+          <h1>{title}</h1>
+          {subtitle && <p>{subtitle}</p>}
+        </div>
+        {onNew && <button className="btn btn-primary" onClick={onNew}>{newLabel || '+ Novo'}</button>}
+      </div>
+      <div className="content">{children}</div>
+    </React.Fragment>
+  );
+}
+
+function useFiltered(list, query, fields){
+  return useMemo(()=>{
+    if(!query) return list;
+    const q = query.toLowerCase();
+    return list.filter(item => fields.some(f => String(item[f]||'').toLowerCase().includes(q)));
+  },[list, query, fields]);
+}
+
+/* ============================== Imóveis ============================== */
+function ImoveisView({data, addOrEdit, remove, modal, setModal, setView}){
+  const [query, setQuery] = useState('');
+  const filtered = useFiltered(data.imoveis, query, ['nome','morada','tipo','proprietario']);
+  const esperaAtivos = data.listaEspera.filter(w=>w.estado==='Ativo');
+  const [expanded, setExpanded] = useState(null);
+
+  const empty = {id:'', nome:'', morada:'', tipo:'Apartamento', area:'', quartos:'', estado:'Vago', renda:'', proprietario:'', notas:''};
+  const anexosCount = (imovelId) => data.documentos.filter(d=>d.imovelId===imovelId && d.temAnexo).length;
+
+  return (
+    <PageShell title="Imóveis" subtitle="A ficha de cada imóvel sob a sua gestão." onNew={()=>setModal({type:'imovel', item:{...empty, id:uid('IM')}})}>
+      <div className="toolbar">
+        <input className="search" placeholder="Procurar por nome, morada, tipo…" value={query} onChange={e=>setQuery(e.target.value)} />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Imóvel</th><th>Tipo</th><th>Estado</th><th>Renda</th><th>Proprietário</th><th></th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(im=>{
+              const matches = im.estado==='Vago' ? esperaAtivos.filter(w=>matchesImovel(w,im)) : [];
+              return (
+                <React.Fragment key={im.id}>
+                  <tr>
+                    <td>
+                      <div style={{fontWeight:600}}>{im.nome}</div>
+                      <div style={{color:'var(--gray)', fontSize:12}}>{im.morada}</div>
+                      {anexosCount(im.id)>0 && (
+                        <button className="match-badge" style={{marginTop:6, background:'var(--azulejo-light)', color:'var(--azulejo)'}} onClick={()=>setView && setView('documentos')}>
+                          📎 {anexosCount(im.id)} PDF{anexosCount(im.id)!==1?'s':''}
+                        </button>
+                      )}
+                    </td>
+                    <td>{im.tipo}</td>
+                    <td>
+                      {estadoImovelTag(im.estado)}
+                      {matches.length>0 && (
+                        <div style={{marginTop:6}}>
+                          <button className="match-badge" onClick={()=>setExpanded(expanded===im.id?null:im.id)}>
+                            🔔 {matches.length} interessado{matches.length!==1?'s':''}
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td>{fmtEUR(im.renda)}</td>
+                    <td>{im.proprietario}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="icon-btn" onClick={()=>setModal({type:'imovel', item:im})}>Editar</button>
+                        <button className="icon-btn danger" onClick={()=>remove('imoveis', im.id)}>Remover</button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expanded===im.id && matches.length>0 && (
+                    <tr><td colSpan="6" style={{background:'var(--limestone)'}}>
+                      <div className="match-list">
+                        {matches.map(w=>(
+                          <div className="item" key={w.id}>
+                            <span>{w.nome} · {w.telefone}</span>
+                            <span style={{color:'var(--gray)'}}>até {fmtEUR(w.rendaMax)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </td></tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {filtered.length===0 && <tr><td colSpan="6" className="empty">Nenhum imóvel encontrado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='imovel' && (
+        <Modal title={data.imoveis.some(x=>x.id===modal.item.id) ? 'Editar imóvel' : 'Novo imóvel'} onClose={()=>setModal(null)}>
+          <ImovelForm item={modal.item} onSave={(it)=>{addOrEdit('imoveis',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function ImovelForm({item, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field full"><label>Nome / Referência</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
+        <div className="field full"><label>Morada</label><input value={f.morada} onChange={e=>set('morada',e.target.value)} /></div>
+        <div className="field"><label>Tipo</label>
+          <select value={f.tipo} onChange={e=>set('tipo',e.target.value)}>
+            {TIPOS_IMOVEL.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Estado</label>
+          <select value={f.estado} onChange={e=>set('estado',e.target.value)}>
+            {ESTADOS_IMOVEL.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Área (m²)</label><input type="number" value={f.area} onChange={e=>set('area',e.target.value)} /></div>
+        <div className="field"><label>Nº Quartos</label><input type="number" value={f.quartos} onChange={e=>set('quartos',e.target.value)} /></div>
+        <div className="field"><label>Renda (€)</label><input type="number" value={f.renda} onChange={e=>set('renda',e.target.value)} /></div>
+        <div className="field"><label>Proprietário</label><input value={f.proprietario} onChange={e=>set('proprietario',e.target.value)} /></div>
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Proprietários (co-propriedade) ============================== */
+function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
+  const empty = {id:'', imovelId:'', nome:'', nif:'', percentagem:'', contacto:'', notas:''};
+  const imovelInfo = (id) => data.imoveis.find(i=>i.id===id);
+
+  // Agrupar proprietários por imóvel para mostrar a verificação de soma == 100%
+  const porImovel = data.imoveis.map(im => ({
+    imovel: im,
+    donos: data.proprietarios.filter(p=>p.imovelId===im.id),
+  })).filter(g => g.donos.length>0);
+
+  const semProprietario = data.imoveis.filter(im => !data.proprietarios.some(p=>p.imovelId===im.id));
+
+  return (
+    <PageShell
+      title="Proprietários"
+      subtitle="Imóveis podem ter mais do que um proprietário. A renda líquida de cada um é calculada automaticamente a partir da sua percentagem."
+      onNew={()=>setModal({type:'proprietario', item:{...empty, id:uid('PR')}})}
+    >
+      {porImovel.map(({imovel, donos})=>{
+        const soma = donos.reduce((s,p)=>s+Number(p.percentagem||0),0);
+        const somaOk = Math.abs(soma-1) < 0.001;
+        return (
+          <div className="panel" key={imovel.id}>
+            <h3>
+              {imovel.nome}
+              <span className="muted">Renda do imóvel: {fmtEUR(imovel.renda)}</span>
+            </h3>
+            <div className="table-wrap" style={{border:'none'}}>
+              <table>
+                <thead><tr>
+                  <th>Proprietário</th><th>NIF</th><th>Contacto</th><th>% Propriedade</th><th>Renda Líquida (Quota)</th><th></th>
+                </tr></thead>
+                <tbody>
+                  {donos.map(p=>{
+                    const quota = Number(imovel.renda||0) * Number(p.percentagem||0);
+                    return (
+                      <tr key={p.id}>
+                        <td style={{fontWeight:600}}>{p.nome}</td>
+                        <td>{p.nif}</td>
+                        <td>{p.contacto}</td>
+                        <td>{(Number(p.percentagem||0)*100).toFixed(0)}%</td>
+                        <td style={{fontWeight:600, color:'var(--telha)'}}>{fmtEUR(quota)}</td>
+                        <td>
+                          <div className="row-actions">
+                            <button className="icon-btn" onClick={()=>setModal({type:'proprietario', item:p})}>Editar</button>
+                            <button className="icon-btn danger" onClick={()=>remove('proprietarios', p.id)}>Remover</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{marginTop:10, display:'flex', alignItems:'center', gap:8}}>
+              <span style={{fontSize:12.5, color:'var(--gray)'}}>Soma da propriedade atribuída:</span>
+              <Tag kind={somaOk ? 'verdigris' : 'rust'}>{(soma*100).toFixed(0)}%{somaOk ? ' — correto' : ' — deveria ser 100%'}</Tag>
+            </div>
+          </div>
+        );
+      })}
+
+      {semProprietario.length>0 && (
+        <div className="panel">
+          <h3>Imóveis sem proprietário registado</h3>
+          {semProprietario.map(im=>(
+            <div className="list-row" key={im.id}>
+              <div>
+                <div className="t1">{im.nome}</div>
+                <div className="t2">{im.morada}</div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setModal({type:'proprietario', item:{...empty, id:uid('PR'), imovelId:im.id}})}>+ Adicionar proprietário</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modal && modal.type==='proprietario' && (
+        <Modal title={data.proprietarios.some(x=>x.id===modal.item.id) ? 'Editar proprietário' : 'Novo proprietário'} onClose={()=>setModal(null)}>
+          <ProprietarioForm item={modal.item} imoveis={data.imoveis} onSave={(it)=>{addOrEdit('proprietarios',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function ProprietarioForm({item, imoveis, onSave, onCancel}){
+  const [f, setF] = useState({...item, percentagem: item.percentagem===''||item.percentagem===undefined ? '' : Math.round(Number(item.percentagem)*100)});
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  const imovel = imoveis.find(i=>i.id===f.imovelId);
+  const quotaPreview = imovel && f.percentagem!=='' ? Number(imovel.renda||0) * (Number(f.percentagem)/100) : null;
+
+  const handleSave = () => {
+    onSave({...f, percentagem: f.percentagem==='' ? 0 : Number(f.percentagem)/100});
+  };
+
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field full"><label>Imóvel</label>
+          <select value={f.imovelId} onChange={e=>set('imovelId',e.target.value)}>
+            <option value="">—</option>
+            {imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Nome do proprietário</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
+        <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /></div>
+        <div className="field"><label>Contacto</label><input value={f.contacto} onChange={e=>set('contacto',e.target.value)} /></div>
+        <div className="field"><label>% de propriedade</label><input type="number" min="0" max="100" value={f.percentagem} onChange={e=>set('percentagem',e.target.value)} /></div>
+        {imovel && (
+          <div className="field full">
+            <label>Renda líquida deste proprietário (calculada automaticamente)</label>
+            <div style={{padding:'8px 10px', background:'var(--limestone)', borderRadius:7, fontWeight:700, color:'var(--telha)'}}>
+              {quotaPreview===null ? '—' : fmtEUR(quotaPreview)}
+              <span style={{fontWeight:400, color:'var(--gray)', marginLeft:8}}>
+                ({fmtEUR(imovel.renda)} × {f.percentagem || 0}%)
+              </span>
+            </div>
+          </div>
+        )}
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={handleSave}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Inquilinos ============================== */
+function InquilinosView({data, addOrEdit, remove, modal, setModal}){
+  const [query, setQuery] = useState('');
+  const filtered = useFiltered(data.inquilinos, query, ['nome','email','telefone']);
+  const empty = {id:'', nome:'', nif:'', telefone:'', email:'', imovelId:'', dataInicio:'', notas:''};
+  const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
+
+  return (
+    <PageShell title="Inquilinos" subtitle="Contactos e histórico dos seus inquilinos." onNew={()=>setModal({type:'inquilino', item:{...empty, id:uid('INQ')}})}>
+      <div className="toolbar">
+        <input className="search" placeholder="Procurar por nome, email…" value={query} onChange={e=>setQuery(e.target.value)} />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Nome</th><th>Contacto</th><th>Imóvel</th><th>Desde</th><th></th></tr></thead>
+          <tbody>
+            {filtered.map(iq=>(
+              <tr key={iq.id}>
+                <td style={{fontWeight:600}}>{iq.nome}</td>
+                <td>{iq.telefone}<div style={{color:'var(--gray)', fontSize:12}}>{iq.email}</div></td>
+                <td>{imovelNome(iq.imovelId)}</td>
+                <td>{fmtDate(iq.dataInicio)}</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" onClick={()=>setModal({type:'inquilino', item:iq})}>Editar</button>
+                    <button className="icon-btn danger" onClick={()=>remove('inquilinos', iq.id)}>Remover</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filtered.length===0 && <tr><td colSpan="5" className="empty">Nenhum inquilino encontrado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='inquilino' && (
+        <Modal title={data.inquilinos.some(x=>x.id===modal.item.id) ? 'Editar inquilino' : 'Novo inquilino'} onClose={()=>setModal(null)}>
+          <InquilinoForm item={modal.item} imoveis={data.imoveis} onSave={(it)=>{addOrEdit('inquilinos',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function InquilinoForm({item, imoveis, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field full"><label>Nome</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
+        <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /></div>
+        <div className="field"><label>Telefone</label><input value={f.telefone} onChange={e=>set('telefone',e.target.value)} /></div>
+        <div className="field full"><label>Email</label><input value={f.email} onChange={e=>set('email',e.target.value)} /></div>
+        <div className="field"><label>Imóvel associado</label>
+          <select value={f.imovelId} onChange={e=>set('imovelId',e.target.value)}>
+            <option value="">—</option>
+            {imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Data de início</label><input type="date" value={f.dataInicio} onChange={e=>set('dataInicio',e.target.value)} /></div>
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Contratos ============================== */
+function rendaAtual(contratoId, contratoRendaInicial, atualizacoesRenda){
+  const historico = atualizacoesRenda.filter(a=>a.contratoId===contratoId).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  if(historico.length===0) return Number(contratoRendaInicial||0);
+  return Number(historico[historico.length-1].valorNovo||0);
+}
+
+function avisoRescisaoInfo(c){
+  if(c.rescindido || !c.dataFim || !c.prazoAvisoRescisao) return null;
+  const dFim = new Date(c.dataFim+'T00:00:00');
+  const dLimite = new Date(dFim.getTime() - Number(c.prazoAvisoRescisao)*86400000);
+  const dLimiteISO = dLimite.toISOString().slice(0,10);
+  return {dataLimiteISO: dLimiteISO, dias: daysUntil(dLimiteISO)};
+}
+
+function ContratosView({data, addOrEdit, remove, modal, setModal}){
+  const empty = {id:'', imovelId:'', inquilinoId:'', dataInicio:'', dataFim:'', renda:'', caucao:'', prazoAvisoRescisao:120, rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', notas:''};
+  const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
+  const inquilinoNome = (id) => { const iq = data.inquilinos.find(i=>i.id===id); return iq ? iq.nome : '—'; };
+  const [expanded, setExpanded] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+
+  const estadoContrato = (c) => {
+    if(c.rescindido) return {label:'Rescindido', kind:'rust'};
+    const d = daysUntil(c.dataFim);
+    if(d===null) return {label:'—', kind:'gray'};
+    if(d<0) return {label:'Terminado', kind:'rust'};
+    if(d<=60) return {label:'A Expirar', kind:'amber'};
+    return {label:'Ativo', kind:'verdigris'};
+  };
+
+  const saveAtualizacao = (formData) => {
+    addOrEdit('atualizacoesRenda', formData);
+    setModal(null);
+  };
+
+  const saveRescisao = async (contrato, formData, fileAction) => {
+    let updated = {...contrato, rescindido:true, dataRescisao:formData.dataRescisao, motivoRescisao:formData.motivoRescisao};
+    if(fileAction && fileAction.type==='set'){
+      if(!storageAvailable()){
+        alert('O seu navegador não permite guardar anexos neste contexto. A rescisão foi registada sem a carta.');
+      } else {
+        try{
+          await storeSet('predial:anexo:rescisao:'+contrato.id, fileAction.base64);
+          updated = {...updated, temAnexoRescisao:true, anexoRescisaoNome:fileAction.nome, anexoRescisaoTipo:fileAction.tipo};
+        } catch(e){
+          const detalhe = (e && e.name==='QuotaExceededError') ? 'o espaço de armazenamento do navegador está cheio' : ((e && e.message) || 'erro desconhecido');
+          alert('Não foi possível guardar a carta de rescisão (' + detalhe + '). A rescisão foi registada sem o anexo.');
+        }
+      }
+    }
+    addOrEdit('contratos', updated);
+    setModal(null);
+  };
+
+  const anularRescisao = async (c) => {
+    if(c.temAnexoRescisao) await storeDelete('predial:anexo:rescisao:'+c.id);
+    addOrEdit('contratos', {...c, rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:''});
+  };
+
+  const verCartaRescisao = async (c) => {
+    setBusyId(c.id);
+    try{
+      const raw = await storeGet('predial:anexo:rescisao:'+c.id);
+      if(!raw){ alert('Carta não encontrada.'); return; }
+      const blob = base64ToBlob(raw, c.anexoRescisaoTipo);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    } catch(e){
+      alert('Não foi possível abrir a carta.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <PageShell title="Contratos" subtitle="Contratos de arrendamento, atualizações de renda e rescisões." onNew={()=>setModal({type:'contrato', item:{...empty, id:uid('CT')}})}>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Contrato</th><th>Imóvel</th><th>Inquilino</th><th>Período</th><th>Renda Atual</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            {data.contratos.map(c=>{
+              const est = estadoContrato(c);
+              const renda = rendaAtual(c.id, c.renda, data.atualizacoesRenda);
+              const aviso = avisoRescisaoInfo(c);
+              const historico = data.atualizacoesRenda.filter(a=>a.contratoId===c.id).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+              return (
+                <React.Fragment key={c.id}>
+                  <tr>
+                    <td style={{fontWeight:600}}>{c.id}</td>
+                    <td>{imovelNome(c.imovelId)}</td>
+                    <td>{inquilinoNome(c.inquilinoId)}</td>
+                    <td>{fmtDate(c.dataInicio)} → {fmtDate(c.dataFim)}</td>
+                    <td>
+                      {fmtEUR(renda)}
+                      {renda !== Number(c.renda||0) && <div style={{fontSize:11, color:'var(--gray)'}}>inicial: {fmtEUR(c.renda)}</div>}
+                    </td>
+                    <td>
+                      <Tag kind={est.kind}>{est.label}</Tag>
+                      {aviso && aviso.dias!==null && aviso.dias<=30 && (
+                        <div style={{marginTop:5}}>
+                          <Tag kind={aviso.dias<0 ? 'rust' : 'amber'}>
+                            {aviso.dias<0 ? 'Prazo de aviso expirado' : ('Enviar aviso até ' + fmtDate(aviso.dataLimiteISO))}
+                          </Tag>
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="icon-btn" onClick={()=>setExpanded(expanded===c.id ? null : c.id)}>{expanded===c.id ? 'Fechar' : 'Detalhes'}</button>
+                        <button className="icon-btn" onClick={()=>setModal({type:'contrato', item:c})}>Editar</button>
+                        <button className="icon-btn danger" onClick={()=>remove('contratos', c.id)}>Remover</button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expanded===c.id && (
+                    <tr><td colSpan="7" style={{background:'var(--limestone)', padding:0}}>
+                      <div style={{padding:'16px 18px'}}>
+
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+                          <div style={{fontWeight:700, fontSize:13}}>Prazo para aviso de rescisão</div>
+                        </div>
+                        <div style={{fontSize:12.5, color:'var(--charcoal)', marginBottom:16}}>
+                          {c.prazoAvisoRescisao
+                            ? <span>{c.prazoAvisoRescisao} dias antes do fim do contrato{aviso ? (' — limite: ' + fmtDate(aviso.dataLimiteISO)) : ''}</span>
+                            : <span style={{color:'var(--gray)'}}>Não definido para este contrato.</span>}
+                        </div>
+
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                          <div style={{fontWeight:700, fontSize:13}}>Histórico de atualizações de renda</div>
+                          {!c.rescindido && (
+                            <button className="btn btn-ghost btn-sm" onClick={()=>setModal({type:'atualizacaoRenda', item:{id:uid('AR'), contratoId:c.id, data:todayISO(), valorAnterior:renda, valorNovo:'', motivo:''}})}>+ Registar atualização</button>
+                          )}
+                        </div>
+                        {historico.length===0 && <div style={{fontSize:12.5, color:'var(--gray)', marginBottom:16}}>Sem atualizações registadas — renda inicial de {fmtEUR(c.renda)} em vigor.</div>}
+                        {historico.length>0 && (
+                          <div className="table-wrap" style={{marginBottom:16}}>
+                            <table>
+                              <thead><tr><th>Data</th><th>Valor Anterior</th><th>Novo Valor</th><th>Variação</th><th>Motivo</th></tr></thead>
+                              <tbody>
+                                {historico.map(a=>{
+                                  const variacao = Number(a.valorNovo||0) - Number(a.valorAnterior||0);
+                                  return (
+                                    <tr key={a.id}>
+                                      <td>{fmtDate(a.data)}</td>
+                                      <td>{fmtEUR(a.valorAnterior)}</td>
+                                      <td>{fmtEUR(a.valorNovo)}</td>
+                                      <td style={{fontWeight:600, color: variacao>0 ? 'var(--verdigris)' : (variacao<0 ? 'var(--rust)' : 'var(--gray)')}}>
+                                        {variacao>0 ? '+' : ''}{fmtEUR(variacao)}
+                                      </td>
+                                      <td>{a.motivo}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                          <div style={{fontWeight:700, fontSize:13}}>Rescisão do contrato</div>
+                          {!c.rescindido && <button className="btn btn-danger-ghost btn-sm" onClick={()=>setModal({type:'rescisao', item:{contrato:c, dataRescisao:todayISO(), motivoRescisao:''}})}>Rescindir contrato</button>}
+                        </div>
+                        {c.rescindido ? (
+                          <div style={{fontSize:12.5}}>
+                            <div><strong>Rescindido em:</strong> {fmtDate(c.dataRescisao)}</div>
+                            {c.motivoRescisao && <div><strong>Motivo:</strong> {c.motivoRescisao}</div>}
+                            <div style={{marginTop:8, display:'flex', gap:8}}>
+                              {c.temAnexoRescisao && (
+                                <button className="icon-btn" disabled={busyId===c.id} onClick={()=>verCartaRescisao(c)}>
+                                  📎 {busyId===c.id ? 'A abrir…' : (c.anexoRescisaoNome || 'Ver carta de rescisão')}
+                                </button>
+                              )}
+                              <button className="icon-btn" onClick={()=>anularRescisao(c)}>Anular rescisão</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{fontSize:12.5, color:'var(--gray)'}}>Contrato ainda não rescindido.</div>
+                        )}
+                      </div>
+                    </td></tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {data.contratos.length===0 && <tr><td colSpan="7" className="empty">Nenhum contrato criado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='contrato' && (
+        <Modal title={data.contratos.some(x=>x.id===modal.item.id) ? 'Editar contrato' : 'Novo contrato'} onClose={()=>setModal(null)}>
+          <ContratoForm item={modal.item} imoveis={data.imoveis} inquilinos={data.inquilinos} onSave={(it)=>{addOrEdit('contratos',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+
+      {modal && modal.type==='atualizacaoRenda' && (
+        <Modal title="Registar atualização de renda" onClose={()=>setModal(null)}>
+          <AtualizacaoRendaForm item={modal.item} onSave={saveAtualizacao} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+
+      {modal && modal.type==='rescisao' && (
+        <Modal title={'Rescindir contrato ' + modal.item.contrato.id} onClose={()=>setModal(null)}>
+          <RescisaoForm item={modal.item} onSave={(formData, fileAction)=>saveRescisao(modal.item.contrato, formData, fileAction)} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function ContratoForm({item, imoveis, inquilinos, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field"><label>Imóvel</label>
+          <select value={f.imovelId} onChange={e=>set('imovelId',e.target.value)}>
+            <option value="">—</option>
+            {imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Inquilino</label>
+          <select value={f.inquilinoId} onChange={e=>set('inquilinoId',e.target.value)}>
+            <option value="">—</option>
+            {inquilinos.map(iq=><option key={iq.id} value={iq.id}>{iq.nome}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Data de início</label><input type="date" value={f.dataInicio} onChange={e=>set('dataInicio',e.target.value)} /></div>
+        <div className="field"><label>Data de fim</label><input type="date" value={f.dataFim} onChange={e=>set('dataFim',e.target.value)} /></div>
+        <div className="field"><label>Renda inicial (€)</label><input type="number" value={f.renda} onChange={e=>set('renda',e.target.value)} /></div>
+        <div className="field"><label>Caução (€)</label><input type="number" value={f.caucao} onChange={e=>set('caucao',e.target.value)} /></div>
+        <div className="field full"><label>Prazo para envio de aviso de rescisão (dias antes do fim)</label><input type="number" placeholder="ex: 120" value={f.prazoAvisoRescisao} onChange={e=>set('prazoAvisoRescisao',e.target.value)} /></div>
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+function AtualizacaoRendaForm({item, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  const variacao = (f.valorNovo!=='' && f.valorAnterior!=='') ? Number(f.valorNovo) - Number(f.valorAnterior) : null;
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field"><label>Data da atualização</label><input type="date" value={f.data} onChange={e=>set('data',e.target.value)} /></div>
+        <div className="field"><label>Valor anterior (€)</label><input type="number" value={f.valorAnterior} onChange={e=>set('valorAnterior',e.target.value)} /></div>
+        <div className="field"><label>Novo valor (€)</label><input type="number" value={f.valorNovo} onChange={e=>set('valorNovo',e.target.value)} /></div>
+        <div className="field">
+          <label>Variação</label>
+          <div style={{padding:'8px 10px', background:'var(--limestone)', borderRadius:7, fontWeight:700, color: variacao>0 ? 'var(--verdigris)' : (variacao<0 ? 'var(--rust)' : 'var(--gray)')}}>
+            {variacao===null ? '—' : (variacao>0?'+':'') + fmtEUR(variacao)}
+          </div>
+        </div>
+        <div className="field full"><label>Motivo (ex: atualização anual, negociação com inquilino…)</label><input value={f.motivo} onChange={e=>set('motivo',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+function RescisaoForm({item, onSave, onCancel}){
+  const [f, setF] = useState({dataRescisao:item.dataRescisao, motivoRescisao:item.motivoRescisao});
+  const [pendingFile, setPendingFile] = useState(null);
+  const [error, setError] = useState('');
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+
+  const onFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    setError('');
+    if(!file) return;
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    if(!isPdf){ setError('Só é possível anexar ficheiros PDF.'); e.target.value=''; return; }
+    if(file.size > MAX_ANEXO_BYTES){ setError('O PDF é demasiado grande (máx. 2 MB).'); e.target.value=''; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = String(reader.result).split(',')[1] || '';
+      setPendingFile({nome:file.name, tipo:file.type || 'application/pdf', base64});
+    };
+    reader.onerror = () => setError('Não foi possível ler o ficheiro.');
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = () => {
+    if(!f.dataRescisao){ setError('Indique a data de rescisão.'); return; }
+    const fileAction = pendingFile ? {type:'set', ...pendingFile} : null;
+    onSave(f, fileAction);
+  };
+
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field"><label>Data de rescisão</label><input type="date" value={f.dataRescisao} onChange={e=>set('dataRescisao',e.target.value)} /></div>
+        <div className="field full"><label>Motivo</label><input placeholder="ex: pedido do inquilino, incumprimento…" value={f.motivoRescisao} onChange={e=>set('motivoRescisao',e.target.value)} /></div>
+        <div className="field full">
+          <label>Carta de rescisão (PDF, opcional)</label>
+          <input type="file" accept="application/pdf,.pdf" onChange={onFileChange} />
+          {error && <div style={{color:'var(--rust)', fontSize:12}}>{error}</div>}
+          {pendingFile && <div style={{color:'var(--verdigris)', fontSize:12}}>Pronto para guardar: {pendingFile.nome}</div>}
+        </div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-danger-ghost" onClick={handleSubmit}>Confirmar rescisão</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Pagamentos ============================== */
+function PagamentosView({data, addOrEdit, remove, modal, setModal}){
+  const empty = {id:'', contratoId:'', mesRef:'', valorDevido:'', dataVencimento:'', dataPagamento:'', valorPago:'', notas:''};
+  const contratoLabel = (id) => {
+    const c = data.contratos.find(c=>c.id===id);
+    if(!c) return id;
+    const im = data.imoveis.find(i=>i.id===c.imovelId);
+    return im ? im.nome : c.id;
+  };
+
+  return (
+    <PageShell title="Pagamentos" subtitle="Controlo de rendas e emissão de recibos." onNew={()=>setModal({type:'pagamento', item:{...empty, id:uid('PG')}})}>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Imóvel</th><th>Mês</th><th>Devido</th><th>Vencimento</th><th>Pago</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            {data.pagamentos.map(p=>{
+              const est = estadoPagamento(p);
+              return (
+                <tr key={p.id}>
+                  <td style={{fontWeight:600}}>{contratoLabel(p.contratoId)}</td>
+                  <td>{p.mesRef}</td>
+                  <td>{fmtEUR(p.valorDevido)}</td>
+                  <td>{fmtDate(p.dataVencimento)}</td>
+                  <td>{p.valorPago ? fmtEUR(p.valorPago) : '—'}</td>
+                  <td><Tag kind={est.kind}>{est.label}</Tag></td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" onClick={()=>setModal({type:'pagamento', item:p})}>Editar</button>
+                      <button className="icon-btn danger" onClick={()=>remove('pagamentos', p.id)}>Remover</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {data.pagamentos.length===0 && <tr><td colSpan="7" className="empty">Nenhum pagamento registado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='pagamento' && (
+        <Modal title={data.pagamentos.some(x=>x.id===modal.item.id) ? 'Editar pagamento' : 'Novo pagamento'} onClose={()=>setModal(null)}>
+          <PagamentoForm item={modal.item} contratos={data.contratos} imoveis={data.imoveis} atualizacoesRenda={data.atualizacoesRenda} proprietarios={data.proprietarios} onSave={(it)=>{addOrEdit('pagamentos',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietarios, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const [autoFilled, setAutoFilled] = useState(false);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  const label = (c) => { const im = imoveis.find(i=>i.id===c.imovelId); return (im?im.nome:c.id) + ' — ' + c.id; };
+
+  const contrato = contratos.find(c=>c.id===f.contratoId);
+  const imovel = contrato ? imoveis.find(i=>i.id===contrato.imovelId) : null;
+  const donos = imovel ? proprietarios.filter(p=>p.imovelId===imovel.id) : [];
+
+  const onContratoChange = (contratoId) => {
+    set('contratoId', contratoId);
+    const c = contratos.find(x=>x.id===contratoId);
+    if(c){
+      const renda = rendaAtual(c.id, c.renda, atualizacoesRenda);
+      set('valorDevido', renda);
+      setAutoFilled(true);
+    }
+  };
+
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field full"><label>Contrato</label>
+          <select value={f.contratoId} onChange={e=>onContratoChange(e.target.value)}>
+            <option value="">—</option>
+            {contratos.map(c=><option key={c.id} value={c.id}>{label(c)}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Mês de referência</label><input placeholder="2026-09" value={f.mesRef} onChange={e=>set('mesRef',e.target.value)} /></div>
+        <div className="field">
+          <label>Valor devido (€)</label>
+          <input type="number" value={f.valorDevido} onChange={e=>{set('valorDevido',e.target.value); setAutoFilled(false);}} />
+          {autoFilled && <div style={{fontSize:11, color:'var(--verdigris)'}}>Preenchido automaticamente com a renda atual do contrato</div>}
+        </div>
+        <div className="field"><label>Data de vencimento</label><input type="date" value={f.dataVencimento} onChange={e=>set('dataVencimento',e.target.value)} /></div>
+        <div className="field"><label>Data de pagamento</label><input type="date" value={f.dataPagamento} onChange={e=>set('dataPagamento',e.target.value)} /></div>
+        <div className="field"><label>Valor pago (€)</label><input type="number" value={f.valorPago} onChange={e=>set('valorPago',e.target.value)} /></div>
+
+        {donos.length>0 && (
+          <div className="field full">
+            <label>Reparte por proprietário {donos.length>1 ? '(co-propriedade)' : ''}</label>
+            <div style={{padding:'8px 10px', background:'var(--limestone)', borderRadius:7, fontSize:12.5}}>
+              {donos.map(p=>(
+                <div key={p.id} style={{display:'flex', justifyContent:'space-between', padding:'2px 0'}}>
+                  <span>{p.nome} ({(Number(p.percentagem||0)*100).toFixed(0)}%)</span>
+                  <span style={{fontWeight:600, color:'var(--telha)'}}>{fmtEUR(Number(f.valorDevido||0) * Number(p.percentagem||0))}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Manutenção ============================== */
+function ManutencaoView({data, addOrEdit, remove, modal, setModal}){
+  const empty = {id:'', imovelId:'', dataPedido:todayISO(), descricao:'', prioridade:'Média', estado:'Pendente', custo:'', fornecedor:''};
+  const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
+
+  return (
+    <PageShell title="Manutenção" subtitle="Pedidos e intervenções nos seus imóveis." onNew={()=>setModal({type:'manut', item:{...empty, id:uid('MN')}})}>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Imóvel</th><th>Descrição</th><th>Prioridade</th><th>Estado</th><th>Custo</th><th></th></tr></thead>
+          <tbody>
+            {data.manutencoes.map(m=>(
+              <tr key={m.id}>
+                <td style={{fontWeight:600}}>{imovelNome(m.imovelId)}</td>
+                <td>{m.descricao}</td>
+                <td><Tag kind={m.prioridade==='Alta'?'rust':m.prioridade==='Média'?'amber':'gray'}>{m.prioridade}</Tag></td>
+                <td>{estadoManutTag(m.estado)}</td>
+                <td>{fmtEUR(m.custo)}</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" onClick={()=>setModal({type:'manut', item:m})}>Editar</button>
+                    <button className="icon-btn danger" onClick={()=>remove('manutencoes', m.id)}>Remover</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {data.manutencoes.length===0 && <tr><td colSpan="6" className="empty">Nenhum pedido de manutenção.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='manut' && (
+        <Modal title={data.manutencoes.some(x=>x.id===modal.item.id) ? 'Editar pedido' : 'Novo pedido de manutenção'} onClose={()=>setModal(null)}>
+          <ManutForm item={modal.item} imoveis={data.imoveis} onSave={(it)=>{addOrEdit('manutencoes',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function ManutForm({item, imoveis, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field"><label>Imóvel</label>
+          <select value={f.imovelId} onChange={e=>set('imovelId',e.target.value)}>
+            <option value="">—</option>
+            {imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Data do pedido</label><input type="date" value={f.dataPedido} onChange={e=>set('dataPedido',e.target.value)} /></div>
+        <div className="field full"><label>Descrição</label><input value={f.descricao} onChange={e=>set('descricao',e.target.value)} /></div>
+        <div className="field"><label>Prioridade</label>
+          <select value={f.prioridade} onChange={e=>set('prioridade',e.target.value)}>
+            {PRIORIDADES.map(p=><option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Estado</label>
+          <select value={f.estado} onChange={e=>set('estado',e.target.value)}>
+            {ESTADOS_MANUT.map(p=><option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Custo (€)</label><input type="number" value={f.custo} onChange={e=>set('custo',e.target.value)} /></div>
+        <div className="field"><label>Fornecedor / Técnico</label><input value={f.fornecedor} onChange={e=>set('fornecedor',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Vistorias (registo fotográfico) ============================== */
+function VistoriasView({data, addOrEdit, remove, modal, setModal}){
+  const empty = {id:'', imovelId:'', tipo:'Entrada', data:todayISO(), descricao:'', notas:'', fotos:[]};
+  const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
+  const [busyKey, setBusyKey] = useState(null);
+
+  const handleSave = async (formData, pendingNewFotos, removedFotoIds) => {
+    for(const fid of removedFotoIds){ await storeDelete('predial:foto:'+fid); }
+    let novasFotos = [];
+    for(const pf of pendingNewFotos){
+      try{
+        await storeSet('predial:foto:'+pf.id, pf.base64);
+        novasFotos.push({id:pf.id, nome:pf.nome});
+      } catch(e){
+        const detalhe = (e && e.name==='QuotaExceededError') ? 'o espaço de armazenamento do navegador está cheio' : ((e && e.message) || 'erro desconhecido');
+        alert('Não foi possível guardar uma fotografia (' + detalhe + '). As restantes foram guardadas.');
+      }
+    }
+    const fotosFinal = [...(formData.fotos||[]).filter(f=>!removedFotoIds.includes(f.id)), ...novasFotos];
+    addOrEdit('vistorias', {...formData, fotos: fotosFinal});
+    setModal(null);
+  };
+
+  const handleRemove = async (vt) => {
+    for(const f of (vt.fotos||[])){ await storeDelete('predial:foto:'+f.id); }
+    remove('vistorias', vt.id);
+  };
+
+  const handleViewFoto = async (vtId, foto) => {
+    const key = vtId+':'+foto.id;
+    setBusyKey(key);
+    try{
+      const raw = await storeGet('predial:foto:'+foto.id);
+      if(!raw){ alert('Fotografia não encontrada.'); return; }
+      const blob = base64ToBlob(raw, 'image/jpeg');
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    } catch(e){
+      alert('Não foi possível abrir a fotografia.');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  return (
+    <PageShell title="Vistorias" subtitle="Registo fotográfico do estado do imóvel — útil como prova em disputas de caução." onNew={()=>setModal({type:'vistoria', item:{...empty, id:uid('VT')}})}>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Imóvel</th><th>Tipo</th><th>Data</th><th>Descrição</th><th>Fotos</th><th></th></tr></thead>
+          <tbody>
+            {data.vistorias.map(vt=>(
+              <tr key={vt.id}>
+                <td style={{fontWeight:600}}>{imovelNome(vt.imovelId)}</td>
+                <td><Tag kind={vt.tipo==='Entrada' ? 'verdigris' : vt.tipo==='Saída' ? 'rust' : 'azulejo'}>{vt.tipo}</Tag></td>
+                <td>{fmtDate(vt.data)}</td>
+                <td>{vt.descricao}</td>
+                <td>
+                  {(vt.fotos||[]).length===0 ? <span style={{color:'var(--gray)', fontSize:12}}>Sem fotos</span> : (
+                    <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+                      {vt.fotos.map(f=>(
+                        <button key={f.id} className="icon-btn" disabled={busyKey===(vt.id+':'+f.id)} onClick={()=>handleViewFoto(vt.id, f)}>
+                          📷 {busyKey===(vt.id+':'+f.id) ? '…' : (f.nome.length>14 ? f.nome.slice(0,12)+'…' : f.nome)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" onClick={()=>setModal({type:'vistoria', item:vt})}>Editar</button>
+                    <button className="icon-btn danger" onClick={()=>handleRemove(vt)}>Remover</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {data.vistorias.length===0 && <tr><td colSpan="6" className="empty">Nenhuma vistoria registada.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='vistoria' && (
+        <Modal title={data.vistorias.some(x=>x.id===modal.item.id) ? 'Editar vistoria' : 'Nova vistoria'} onClose={()=>setModal(null)}>
+          <VistoriaForm item={modal.item} imoveis={data.imoveis} onSave={handleSave} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function VistoriaForm({item, imoveis, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const [pendingNewFotos, setPendingNewFotos] = useState([]); // {id, nome, base64, tipo}
+  const [removedFotoIds, setRemovedFotoIds] = useState([]);
+  const [error, setError] = useState('');
+  const [processing, setProcessing] = useState(false);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+
+  const fotosExistentes = (f.fotos||[]).filter(fo=>!removedFotoIds.includes(fo.id));
+
+  const onFilesChange = async (e) => {
+    const files = Array.from(e.target.files || []);
+    setError('');
+    if(files.length===0) return;
+    setProcessing(true);
+    const novas = [];
+    for(const file of files){
+      if(!file.type.startsWith('image/')){ setError('Só é possível anexar imagens.'); continue; }
+      try{
+        const {base64, tipo} = await compressImageFile(file);
+        novas.push({id: uid('FT'), nome: file.name, base64, tipo});
+      } catch(err){
+        setError('Não foi possível processar uma das imagens.');
+      }
+    }
+    setPendingNewFotos(s => [...s, ...novas]);
+    setProcessing(false);
+    e.target.value = '';
+  };
+
+  const handleSubmit = () => {
+    onSave(f, pendingNewFotos, removedFotoIds);
+  };
+
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field"><label>Imóvel</label>
+          <select value={f.imovelId} onChange={e=>set('imovelId',e.target.value)}>
+            <option value="">—</option>
+            {imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Tipo de vistoria</label>
+          <select value={f.tipo} onChange={e=>set('tipo',e.target.value)}>
+            {TIPOS_VISTORIA.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Data</label><input type="date" value={f.data} onChange={e=>set('data',e.target.value)} /></div>
+        <div className="field full"><label>Descrição do estado do imóvel</label><input value={f.descricao} onChange={e=>set('descricao',e.target.value)} /></div>
+
+        <div className="field full">
+          <label>Fotografias</label>
+          <input type="file" accept="image/*" multiple onChange={onFilesChange} />
+          {processing && <div style={{fontSize:12, color:'var(--gray)'}}>A processar imagens…</div>}
+          {error && <div style={{color:'var(--rust)', fontSize:12}}>{error}</div>}
+
+          {(fotosExistentes.length>0 || pendingNewFotos.length>0) && (
+            <div style={{display:'flex', flexWrap:'wrap', gap:8, marginTop:8}}>
+              {fotosExistentes.map(fo=>(
+                <div key={fo.id} style={{textAlign:'center'}}>
+                  <div style={{width:64, height:64, background:'var(--limestone)', border:'1px solid var(--line)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20}}>📷</div>
+                  <div style={{fontSize:10, color:'var(--gray)', maxWidth:64, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{fo.nome}</div>
+                  <button type="button" className="icon-btn danger btn-sm" style={{marginTop:2}} onClick={()=>setRemovedFotoIds(s=>[...s, fo.id])}>Remover</button>
+                </div>
+              ))}
+              {pendingNewFotos.map(pf=>(
+                <div key={pf.id} style={{textAlign:'center'}}>
+                  <img src={'data:'+pf.tipo+';base64,'+pf.base64} style={{width:64, height:64, objectFit:'cover', borderRadius:6, border:'1px solid var(--line)'}} />
+                  <div style={{fontSize:10, color:'var(--verdigris)'}}>nova</div>
+                  <button type="button" className="icon-btn danger btn-sm" style={{marginTop:2}} onClick={()=>setPendingNewFotos(s=>s.filter(x=>x.id!==pf.id))}>Remover</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={handleSubmit}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Despesas ============================== */
+function DespesasView({data, addOrEdit, remove, modal, setModal}){
+  const empty = {id:'', imovelId:'', data:todayISO(), anoFiscal:new Date().getFullYear(), categoria:'Obras', descricao:'', valor:'', dedutivel:true, notas:'', temComprovativo:false, comprovativoNome:'', comprovativoTipo:''};
+  const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
+  const [busyId, setBusyId] = useState(null);
+  const [filtroAno, setFiltroAno] = useState('todos');
+  const [filtroImovel, setFiltroImovel] = useState('todos');
+
+  const anos = [...new Set(data.despesas.map(d=>d.anoFiscal))].sort((a,b)=>b-a);
+  const filtradas = data.despesas.filter(d =>
+    (filtroAno==='todos' || String(d.anoFiscal)===String(filtroAno)) &&
+    (filtroImovel==='todos' || d.imovelId===filtroImovel)
+  );
+  const totalGeral = filtradas.reduce((s,d)=>s+Number(d.valor||0), 0);
+  const totalDedutivel = filtradas.filter(d=>d.dedutivel).reduce((s,d)=>s+Number(d.valor||0), 0);
+
+  const handleSave = async (formData, fileAction) => {
+    let updated = {...formData, anoFiscal: formData.data ? Number(formData.data.slice(0,4)) : formData.anoFiscal};
+    if(fileAction && fileAction.type==='set'){
+      if(!storageAvailable()){
+        alert('O seu navegador não permite guardar anexos neste contexto. A despesa foi guardada sem comprovativo.');
+      } else {
+        try{
+          await storeSet('predial:anexo:despesa:'+formData.id, fileAction.base64);
+          updated = {...updated, temComprovativo:true, comprovativoNome:fileAction.nome, comprovativoTipo:fileAction.tipo};
+        } catch(e){
+          const detalhe = (e && e.name==='QuotaExceededError') ? 'o espaço de armazenamento do navegador está cheio' : ((e && e.message) || 'erro desconhecido');
+          alert('Não foi possível guardar o comprovativo (' + detalhe + '). A despesa foi guardada sem anexo.');
+        }
+      }
+    } else if(fileAction && fileAction.type==='remove'){
+      await storeDelete('predial:anexo:despesa:'+formData.id);
+      updated = {...updated, temComprovativo:false, comprovativoNome:'', comprovativoTipo:''};
+    }
+    addOrEdit('despesas', updated);
+    setModal(null);
+  };
+
+  const handleRemove = async (d) => {
+    if(d.temComprovativo) await storeDelete('predial:anexo:despesa:'+d.id);
+    remove('despesas', d.id);
+  };
+
+  const handleView = async (d) => {
+    setBusyId(d.id);
+    try{
+      const raw = await storeGet('predial:anexo:despesa:'+d.id);
+      if(!raw){ alert('Comprovativo não encontrado.'); return; }
+      const blob = base64ToBlob(raw, d.comprovativoTipo);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    } catch(e){
+      alert('Não foi possível abrir o comprovativo.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <PageShell title="Despesas" subtitle="Despesas do imóvel, catalogadas por ano fiscal — úteis para o IRS Categoria F." onNew={()=>setModal({type:'despesa', item:{...empty, id:uid('DP')}})}>
+      <div className="toolbar">
+        <div style={{display:'flex', gap:10}}>
+          <select className="search" style={{width:140}} value={filtroAno} onChange={e=>setFiltroAno(e.target.value)}>
+            <option value="todos">Todos os anos</option>
+            {anos.map(a=><option key={a} value={a}>{a}</option>)}
+          </select>
+          <select className="search" style={{width:180}} value={filtroImovel} onChange={e=>setFiltroImovel(e.target.value)}>
+            <option value="todos">Todos os imóveis</option>
+            {data.imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr', marginBottom:18}}>
+        <div className="kpi-card">
+          <div className="label">Total no período filtrado</div>
+          <div className="value">{fmtEUR(totalGeral)}</div>
+        </div>
+        <div className="kpi-card">
+          <div className="label">Dedutível (IRS Categoria F)</div>
+          <div className="value verdigris">{fmtEUR(totalDedutivel)}</div>
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Data</th><th>Imóvel</th><th>Categoria</th><th>Descrição</th><th>Valor</th><th>Dedutível</th><th>Comprovativo</th><th></th></tr></thead>
+          <tbody>
+            {filtradas.map(d=>(
+              <tr key={d.id}>
+                <td>{fmtDate(d.data)}</td>
+                <td style={{fontWeight:600}}>{imovelNome(d.imovelId)}</td>
+                <td><Tag kind="azulejo">{d.categoria}</Tag></td>
+                <td>{d.descricao}</td>
+                <td>{fmtEUR(d.valor)}</td>
+                <td>{d.dedutivel ? <Tag kind="verdigris">Sim</Tag> : <Tag kind="gray">Não</Tag>}</td>
+                <td>
+                  {d.temComprovativo ? (
+                    <button className="icon-btn" disabled={busyId===d.id} onClick={()=>handleView(d)}>
+                      📎 {busyId===d.id ? 'A abrir…' : 'Ver'}
+                    </button>
+                  ) : <span style={{color:'var(--gray)', fontSize:12}}>—</span>}
+                </td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" onClick={()=>setModal({type:'despesa', item:d})}>Editar</button>
+                    <button className="icon-btn danger" onClick={()=>handleRemove(d)}>Remover</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filtradas.length===0 && <tr><td colSpan="8" className="empty">Nenhuma despesa registada para este filtro.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='despesa' && (
+        <Modal title={data.despesas.some(x=>x.id===modal.item.id) ? 'Editar despesa' : 'Nova despesa'} onClose={()=>setModal(null)}>
+          <DespesaForm item={modal.item} imoveis={data.imoveis} onSave={handleSave} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function DespesaForm({item, imoveis, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [removeExisting, setRemoveExisting] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+
+  const onFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    setError('');
+    if(!file) return;
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const isImage = file.type.startsWith('image/');
+    if(!isPdf && !isImage){ setError('Anexe um PDF ou uma imagem (foto da fatura/recibo).'); e.target.value=''; return; }
+
+    if(isImage){
+      compressImageFile(file).then(({base64, tipo}) => {
+        setPendingFile({nome:file.name, tipo, base64});
+        setRemoveExisting(false);
+      }).catch(() => setError('Não foi possível processar a imagem.'));
+      return;
+    }
+    if(file.size > MAX_ANEXO_BYTES){ setError('O PDF é demasiado grande (máx. 2 MB).'); e.target.value=''; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = String(reader.result).split(',')[1] || '';
+      setPendingFile({nome:file.name, tipo:file.type || 'application/pdf', base64});
+      setRemoveExisting(false);
+    };
+    reader.onerror = () => setError('Não foi possível ler o ficheiro.');
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = () => {
+    let fileAction = null;
+    if(pendingFile) fileAction = {type:'set', ...pendingFile};
+    else if(removeExisting) fileAction = {type:'remove'};
+    onSave(f, fileAction);
+  };
+
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field"><label>Imóvel</label>
+          <select value={f.imovelId} onChange={e=>set('imovelId',e.target.value)}>
+            <option value="">—</option>
+            {imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Data</label><input type="date" value={f.data} onChange={e=>set('data',e.target.value)} /></div>
+        <div className="field"><label>Categoria</label>
+          <select value={f.categoria} onChange={e=>set('categoria',e.target.value)}>
+            {CATEGORIAS_DESPESA.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Valor (€)</label><input type="number" value={f.valor} onChange={e=>set('valor',e.target.value)} /></div>
+        <div className="field full"><label>Descrição</label><input value={f.descricao} onChange={e=>set('descricao',e.target.value)} /></div>
+        <div className="field">
+          <label>Dedutível no IRS (Categoria F)</label>
+          <select value={f.dedutivel ? '1' : '0'} onChange={e=>set('dedutivel', e.target.value==='1')}>
+            <option value="1">Sim</option>
+            <option value="0">Não</option>
+          </select>
+        </div>
+        <div className="field"><label>Ano fiscal</label><input type="number" value={f.data ? Number(f.data.slice(0,4)) : f.anoFiscal} disabled style={{color:'var(--gray)'}} /></div>
+
+        <div className="field full">
+          <label>Comprovativo (PDF ou foto da fatura)</label>
+          <input type="file" accept="application/pdf,.pdf,image/*" onChange={onFileChange} />
+          {error && <div style={{color:'var(--rust)', fontSize:12}}>{error}</div>}
+          {pendingFile && <div style={{color:'var(--verdigris)', fontSize:12}}>Pronto para guardar: {pendingFile.nome}</div>}
+          {!pendingFile && f.temComprovativo && !removeExisting && (
+            <div style={{display:'flex', alignItems:'center', gap:10, fontSize:12, color:'var(--gray)'}}>
+              <span>Comprovativo atual: {f.comprovativoNome}</span>
+              <button type="button" className="icon-btn danger" onClick={()=>setRemoveExisting(true)}>Remover</button>
+            </div>
+          )}
+          {removeExisting && <div style={{color:'var(--rust)', fontSize:12}}>O comprovativo será removido ao guardar.</div>}
+        </div>
+
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={handleSubmit}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Lista de Espera ============================== */
+function ListaEsperaView({data, addOrEdit, remove, modal, setModal}){
+  const [query, setQuery] = useState('');
+  const filtered = useFiltered(data.listaEspera, query, ['nome','zona','tipo']);
+  const empty = {id:'', nome:'', telefone:'', email:'', tipo:'Apartamento', zona:'', rendaMax:'', quartosMin:'', dataRegisto:todayISO(), estado:'Ativo', notas:''};
+
+  return (
+    <PageShell
+      title="Lista de Espera"
+      subtitle="Interessados a aguardar um imóvel compatível ficar disponível. Quando um imóvel muda para 'Vago', é comparado automaticamente com esta lista."
+      onNew={()=>setModal({type:'espera', item:{...empty, id:uid('LE')}})}
+    >
+      <div className="toolbar">
+        <input className="search" placeholder="Procurar por nome, zona, tipo…" value={query} onChange={e=>setQuery(e.target.value)} />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Interessado</th><th>Procura</th><th>Renda até</th><th>Registo</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            {filtered.map(w=>{
+              const matches = data.imoveis.filter(im=>matchesImovel(w, im));
+              return (
+                <tr key={w.id}>
+                  <td>
+                    <div style={{fontWeight:600}}>{w.nome}</div>
+                    <div style={{color:'var(--gray)', fontSize:12}}>{w.telefone} · {w.email}</div>
+                  </td>
+                  <td>{w.tipo}{w.zona ? (' · ' + w.zona) : ''}{w.quartosMin ? (' · ' + w.quartosMin + '+ quartos') : ''}
+                    {matches.length>0 && (
+                      <div style={{marginTop:6}}>
+                        <span className="match-badge">🔔 {matches.length} imóvel{matches.length!==1?'is':''} vago{matches.length!==1?'s':''} disponíve{matches.length!==1?'is':'l'}</span>
+                      </div>
+                    )}
+                  </td>
+                  <td>{fmtEUR(w.rendaMax)}</td>
+                  <td>{fmtDate(w.dataRegisto)}</td>
+                  <td>{estadoWaitlistTag(w.estado)}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" onClick={()=>setModal({type:'espera', item:w})}>Editar</button>
+                      <button className="icon-btn danger" onClick={()=>remove('listaEspera', w.id)}>Remover</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length===0 && <tr><td colSpan="6" className="empty">Ninguém na lista de espera.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='espera' && (
+        <Modal title={data.listaEspera.some(x=>x.id===modal.item.id) ? 'Editar interessado' : 'Novo interessado'} onClose={()=>setModal(null)}>
+          <EsperaForm item={modal.item} onSave={(it)=>{addOrEdit('listaEspera',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function EsperaForm({item, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field full"><label>Nome</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
+        <div className="field"><label>Telefone</label><input value={f.telefone} onChange={e=>set('telefone',e.target.value)} /></div>
+        <div className="field"><label>Email</label><input value={f.email} onChange={e=>set('email',e.target.value)} /></div>
+        <div className="field"><label>Tipo de imóvel procurado</label>
+          <select value={f.tipo} onChange={e=>set('tipo',e.target.value)}>
+            {TIPOS_IMOVEL.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Zona preferida</label><input placeholder="ex: Chiado, Sintra…" value={f.zona} onChange={e=>set('zona',e.target.value)} /></div>
+        <div className="field"><label>Renda máxima (€)</label><input type="number" value={f.rendaMax} onChange={e=>set('rendaMax',e.target.value)} /></div>
+        <div className="field"><label>Nº mínimo de quartos</label><input type="number" value={f.quartosMin} onChange={e=>set('quartosMin',e.target.value)} /></div>
+        <div className="field"><label>Data de registo</label><input type="date" value={f.dataRegisto} onChange={e=>set('dataRegisto',e.target.value)} /></div>
+        <div className="field"><label>Estado</label>
+          <select value={f.estado} onChange={e=>set('estado',e.target.value)}>
+            {ESTADOS_WAITLIST.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Tarefas ============================== */
+function TarefasView({data, addOrEdit, remove, modal, setModal}){
+  const empty = {id:'', titulo:'', dataLimite:'', concluida:false, notas:''};
+  const ordenadas = [...data.tarefas].sort((a,b)=> (a.concluida - b.concluida) || (a.dataLimite||'').localeCompare(b.dataLimite||''));
+
+  return (
+    <PageShell title="Tarefas" subtitle="Lembretes para nunca perder um prazo importante." onNew={()=>setModal({type:'tarefa', item:{...empty, id:uid('TF')}})}>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Tarefa</th><th>Prazo</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            {ordenadas.map(t=>{
+              const d = daysUntil(t.dataLimite);
+              return (
+                <tr key={t.id}>
+                  <td style={{fontWeight:600, textDecoration: t.concluida ? 'line-through' : 'none', color: t.concluida ? 'var(--gray)' : 'var(--charcoal)'}}>{t.titulo}</td>
+                  <td>{t.dataLimite ? fmtDate(t.dataLimite) : '—'}</td>
+                  <td>
+                    {t.concluida ? <Tag kind="verdigris">Concluída</Tag> :
+                      (d!==null && d<0) ? <Tag kind="rust">Atrasada</Tag> :
+                      (d!==null && d<=7) ? <Tag kind="amber">Em breve</Tag> : <Tag kind="gray">Pendente</Tag>}
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" onClick={()=>addOrEdit('tarefas', {...t, concluida:!t.concluida})}>{t.concluida ? 'Reabrir' : 'Concluir'}</button>
+                      <button className="icon-btn" onClick={()=>setModal({type:'tarefa', item:t})}>Editar</button>
+                      <button className="icon-btn danger" onClick={()=>remove('tarefas', t.id)}>Remover</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {ordenadas.length===0 && <tr><td colSpan="4" className="empty">Sem tarefas registadas.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='tarefa' && (
+        <Modal title={data.tarefas.some(x=>x.id===modal.item.id) ? 'Editar tarefa' : 'Nova tarefa'} onClose={()=>setModal(null)}>
+          <TarefaForm item={modal.item} onSave={(it)=>{addOrEdit('tarefas',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function TarefaForm({item, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field full"><label>Título</label><input value={f.titulo} onChange={e=>set('titulo',e.target.value)} /></div>
+        <div className="field"><label>Prazo</label><input type="date" value={f.dataLimite} onChange={e=>set('dataLimite',e.target.value)} /></div>
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Documentos ============================== */
+function DocumentosView({data, addOrEdit, remove, modal, setModal}){
+  const empty = {id:'', nome:'', categoria:'', imovelId:'', data:todayISO(), notas:'', temAnexo:false, anexoNome:'', anexoTipo:''};
+  const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
+  const [busyId, setBusyId] = useState(null);
+
+  const handleSave = async (formData, fileAction) => {
+    let updated = {...formData};
+    if(fileAction && fileAction.type==='set'){
+      if(!storageAvailable()){
+        alert('O seu navegador não permite guardar anexos neste contexto (ex: modo privado). O documento foi guardado sem o PDF.');
+      } else {
+        try{
+          await storeSet('predial:anexo:'+formData.id, fileAction.base64);
+          updated = {...updated, temAnexo:true, anexoNome:fileAction.nome, anexoTipo:fileAction.tipo};
+        } catch(e){
+          console.error('Falha ao guardar anexo:', e);
+          const detalhe = (e && e.name === 'QuotaExceededError')
+            ? 'o espaço de armazenamento do navegador está cheio'
+            : ((e && e.message) || 'erro desconhecido');
+          alert('Não foi possível guardar o PDF (' + detalhe + '). O documento foi guardado sem anexo.');
+        }
+      }
+    } else if(fileAction && fileAction.type==='remove'){
+      await storeDelete('predial:anexo:'+formData.id);
+      updated = {...updated, temAnexo:false, anexoNome:'', anexoTipo:''};
+    }
+    addOrEdit('documentos', updated);
+    setModal(null);
+  };
+
+  const handleView = async (doc) => {
+    setBusyId(doc.id);
+    try{
+      const raw = await storeGet('predial:anexo:'+doc.id);
+      if(!raw){ alert('Anexo não encontrado.'); return; }
+      const blob = base64ToBlob(raw, doc.anexoTipo);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    } catch(e){
+      alert('Não foi possível abrir o anexo.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleRemove = async (doc) => {
+    if(doc.temAnexo){
+      await storeDelete('predial:anexo:'+doc.id);
+    }
+    remove('documentos', doc.id);
+  };
+
+  return (
+    <PageShell title="Documentos" subtitle="Arquive PDFs por imóvel (escrituras, seguros, faturas, contratos digitalizados…)." onNew={()=>setModal({type:'doc', item:{...empty, id:uid('DC')}})}>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Documento</th><th>Categoria</th><th>Imóvel</th><th>Data</th><th>Anexo</th><th></th></tr></thead>
+          <tbody>
+            {data.documentos.map(d=>(
+              <tr key={d.id}>
+                <td style={{fontWeight:600}}>{d.nome}</td>
+                <td>{d.categoria}</td>
+                <td>{imovelNome(d.imovelId)}</td>
+                <td>{fmtDate(d.data)}</td>
+                <td>
+                  {d.temAnexo ? (
+                    <button className="icon-btn" disabled={busyId===d.id} onClick={()=>handleView(d)}>
+                      📎 {busyId===d.id ? 'A abrir…' : (d.anexoNome || 'Ver PDF')}
+                    </button>
+                  ) : <span style={{color:'var(--gray)', fontSize:12}}>Sem anexo</span>}
+                </td>
+                <td>
+                  <div className="row-actions">
+                    <button className="icon-btn" onClick={()=>setModal({type:'doc', item:d})}>Editar</button>
+                    <button className="icon-btn danger" onClick={()=>handleRemove(d)}>Remover</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {data.documentos.length===0 && <tr><td colSpan="6" className="empty">Nenhum documento arquivado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='doc' && (
+        <Modal title={data.documentos.some(x=>x.id===modal.item.id) ? 'Editar documento' : 'Novo documento'} onClose={()=>setModal(null)}>
+          <DocForm item={modal.item} imoveis={data.imoveis} onSave={handleSave} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function DocForm({item, imoveis, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const [pendingFile, setPendingFile] = useState(null); // {nome, tipo, base64}
+  const [removeExisting, setRemoveExisting] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+
+  const onFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    setError('');
+    if(!file) return;
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    if(!isPdf){ setError('Só é possível anexar ficheiros PDF.'); e.target.value=''; return; }
+    if(file.size > MAX_ANEXO_BYTES){ setError('O PDF é demasiado grande (máx. 2 MB).'); e.target.value=''; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = String(reader.result).split(',')[1] || '';
+      setPendingFile({nome:file.name, tipo:file.type || 'application/pdf', base64});
+      setRemoveExisting(false);
+      if(!f.nome) set('nome', file.name.replace(/\.pdf$/i,''));
+    };
+    reader.onerror = () => setError('Não foi possível ler o ficheiro.');
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = () => {
+    let fileAction = null;
+    if(pendingFile) fileAction = {type:'set', ...pendingFile};
+    else if(removeExisting) fileAction = {type:'remove'};
+    onSave(f, fileAction);
+  };
+
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field full"><label>Nome do documento</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
+        <div className="field"><label>Categoria</label><input placeholder="ex: Escritura, Seguro, Fatura…" value={f.categoria} onChange={e=>set('categoria',e.target.value)} /></div>
+        <div className="field"><label>Imóvel</label>
+          <select value={f.imovelId} onChange={e=>set('imovelId',e.target.value)}>
+            <option value="">—</option>
+            {imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Data</label><input type="date" value={f.data} onChange={e=>set('data',e.target.value)} /></div>
+        <div className="field full">
+          <label>Anexar PDF</label>
+          <input type="file" accept="application/pdf,.pdf" onChange={onFileChange} />
+          {error && <div style={{color:'var(--rust)', fontSize:12}}>{error}</div>}
+          {pendingFile && <div style={{color:'var(--verdigris)', fontSize:12}}>Pronto para guardar: {pendingFile.nome}</div>}
+          {!pendingFile && f.temAnexo && !removeExisting && (
+            <div style={{display:'flex', alignItems:'center', gap:10, fontSize:12, color:'var(--gray)'}}>
+              <span>Anexo atual: {f.anexoNome}</span>
+              <button type="button" className="icon-btn danger" onClick={()=>setRemoveExisting(true)}>Remover anexo</button>
+            </div>
+          )}
+          {removeExisting && <div style={{color:'var(--rust)', fontSize:12}}>O anexo será removido ao guardar.</div>}
+        </div>
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={handleSubmit}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Mount ============================== */
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
