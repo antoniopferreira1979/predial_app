@@ -899,6 +899,35 @@ function MainApp({userId, userEmail, onSignOut}){
   const [data, setData, loaded, syncError] = useAppData(userId);
   const [view, setView] = useState('dashboard');
   const [modal, setModal] = useState(null); // {type, item}
+  const autoGenRan = useRef(false);
+
+  // No dia 1 (ou assim que a app abrir depois disso), gera automaticamente
+  // os pagamentos pendentes do mês para todos os contratos ativos, se ainda
+  // não existirem. Corre uma vez por sessão.
+  useEffect(() => {
+    if(!loaded || !data || autoGenRan.current) return;
+    autoGenRan.current = true;
+    const hoje = new Date();
+    const anoMes = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0');
+    const contratosAtivos = data.contratos.filter(c => {
+      const est = estadoContrato(c);
+      return est.label==='Ativo' || est.label==='A Expirar';
+    });
+    contratosAtivos.forEach(c => {
+      const jaExiste = data.pagamentos.some(p => p.contratoId===c.id && p.mesRef===anoMes);
+      if(!jaExiste){
+        const renda = rendaAtual(c.id, c.renda, data.atualizacoesRenda);
+        const novoPagamento = {
+          id: uid('PG'), contratoId: c.id, mesRef: anoMes,
+          valorDevido: renda, dataVencimento: anoMes + '-08',
+          dataPagamento: '', valorPago: '',
+          notas: 'Gerado automaticamente no início do mês',
+        };
+        update('pagamentos', list => [...list, novoPagamento]);
+        persistUpsert('pagamentos', novoPagamento, userId);
+      }
+    });
+  }, [loaded, data]);
 
   if(!loaded || !data){
     return <div style={{padding:'60px', fontFamily:'IBM Plex Sans, sans-serif', color:'#7C7A72'}}>A carregar o Predial…</div>;
@@ -999,6 +1028,9 @@ function Dashboard({data, setView}){
   const vagos = data.imoveis.filter(i=>i.estado==='Vago').length;
   const total = data.imoveis.length;
   const receita = data.imoveis.reduce((s,i)=>s+Number(i.renda||0),0);
+  const receitaContratada = data.contratos
+    .filter(c => { const est = estadoContrato(c); return est.label==='Ativo' || est.label==='A Expirar'; })
+    .reduce((s,c) => s + rendaAtual(c.id, c.renda, data.atualizacoesRenda), 0);
   const taxaOcup = total ? Math.round((ocupados/total)*100) : 0;
   const emAtraso = data.pagamentos.filter(p=>estadoPagamento(p).label==='Em Atraso');
   const tarefasPendentes = data.tarefas.filter(t=>!t.concluida).sort((a,b)=>(a.dataLimite||'').localeCompare(b.dataLimite||''));
@@ -1021,11 +1053,15 @@ function Dashboard({data, setView}){
         </div>
       </div>
       <div className="content">
-        <div className="kpi-row">
+        <div className="kpi-row" style={{gridTemplateColumns:'1.2fr 1fr 1fr 1fr 1fr'}}>
           <div className="kpi-hero">
             <div className="label">Receita mensal potencial</div>
             <div className="value">{fmtEUR(receita)}</div>
             <div className="foot">{total} imóve{total===1?'l':'is'} sob gestão · {taxaOcup}% de ocupação</div>
+          </div>
+          <div className="kpi-card">
+            <div className="label">Receita mensal contratada</div>
+            <div className="value telha">{fmtEUR(receitaContratada)}</div>
           </div>
           <div className="kpi-card">
             <div className="label">Imóveis ocupados</div>
@@ -1465,6 +1501,15 @@ function InquilinoForm({item, imoveis, onSave, onCancel}){
 }
 
 /* ============================== Contratos ============================== */
+function estadoContrato(c){
+  if(c.rescindido) return {label:'Rescindido', kind:'rust'};
+  const d = daysUntil(c.dataFim);
+  if(d===null) return {label:'—', kind:'gray'};
+  if(d<0) return {label:'Terminado', kind:'rust'};
+  if(d<=60) return {label:'A Expirar', kind:'amber'};
+  return {label:'Ativo', kind:'verdigris'};
+}
+
 function rendaAtual(contratoId, contratoRendaInicial, atualizacoesRenda){
   const historico = atualizacoesRenda.filter(a=>a.contratoId===contratoId).sort((a,b)=>(a.data||'').localeCompare(b.data||''));
   if(historico.length===0) return Number(contratoRendaInicial||0);
@@ -1486,14 +1531,6 @@ function ContratosView({data, addOrEdit, remove, modal, setModal}){
   const [expanded, setExpanded] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
-  const estadoContrato = (c) => {
-    if(c.rescindido) return {label:'Rescindido', kind:'rust'};
-    const d = daysUntil(c.dataFim);
-    if(d===null) return {label:'—', kind:'gray'};
-    if(d<0) return {label:'Terminado', kind:'rust'};
-    if(d<=60) return {label:'A Expirar', kind:'amber'};
-    return {label:'Ativo', kind:'verdigris'};
-  };
 
   const saveAtualizacao = (formData) => {
     addOrEdit('atualizacoesRenda', formData);
@@ -1955,7 +1992,16 @@ function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietari
         </div>
         <div className="field"><label>Data de vencimento</label><input type="date" value={f.dataVencimento} onChange={e=>set('dataVencimento',e.target.value)} /></div>
         <div className="field"><label>Data de pagamento</label><input type="date" value={f.dataPagamento} onChange={e=>set('dataPagamento',e.target.value)} /></div>
-        <div className="field"><label>Valor pago (€)</label><input type="number" value={f.valorPago} onChange={e=>set('valorPago',e.target.value)} /></div>
+        <div className="field">
+          <label>Valor pago (€)</label>
+          <input type="number" value={f.valorPago} onChange={e=>set('valorPago',e.target.value)} />
+          {contrato && f.valorPago!=='' && (() => {
+            const rendaAgora = rendaAtual(contrato.id, contrato.renda, atualizacoesRenda);
+            const diff = Number(f.valorPago) - rendaAgora;
+            if(Math.abs(diff) < 0.01) return <div style={{fontSize:11, color:'var(--verdigris)'}}>Confere com a renda atual do contrato ({fmtEUR(rendaAgora)})</div>;
+            return <div style={{fontSize:11, color:'var(--amber)'}}>⚠ {diff>0?'Acima':'Abaixo'} da renda atual do contrato ({fmtEUR(rendaAgora)}), diferença de {fmtEUR(Math.abs(diff))}</div>;
+          })()}
+        </div>
 
         {donos.length>0 && (
           <div className="field full">
