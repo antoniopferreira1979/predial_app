@@ -503,15 +503,47 @@ function seedData(){
 const SUPABASE_URL = 'https://mzbxryxpaupakdjkfizl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_17FQtwKCRzcAtF2jLCuFfw_qTcP3IPJ';
 
+// Adaptador de armazenamento à prova de bloqueios: alguns navegadores
+// (ex: "Tracking Prevention" do Edge) bloqueiam o acesso ao localStorage
+// para scripts de CDNs externos, o que faz o Supabase falhar ao iniciar.
+// Este adaptador tenta o localStorage e, se falhar, usa memória (a sessão
+// não sobrevive a fechar a aba nesse caso, mas a app continua a funcionar).
+function safeAuthStorage(){
+  const memory = {};
+  let localOk = true;
+  try{
+    const k = '__predial_probe__';
+    window.localStorage.setItem(k, '1');
+    window.localStorage.removeItem(k);
+  } catch(e){ localOk = false; }
+
+  return {
+    getItem: (key) => {
+      if(localOk){ try{ return window.localStorage.getItem(key); } catch(e){ /* cai para memória */ } }
+      return Object.prototype.hasOwnProperty.call(memory, key) ? memory[key] : null;
+    },
+    setItem: (key, value) => {
+      if(localOk){ try{ window.localStorage.setItem(key, value); return; } catch(e){ /* cai para memória */ } }
+      memory[key] = value;
+    },
+    removeItem: (key) => {
+      if(localOk){ try{ window.localStorage.removeItem(key); return; } catch(e){ /* cai para memória */ } }
+      delete memory[key];
+    },
+  };
+}
+
 const supabaseConfigured = SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY.length > 20;
 let supabase = null;
 let supabaseInitError = '';
 if(supabaseConfigured){
   try{
-    if(typeof window.supabase === 'undefined' || !window.supabase.createClient){
+    if(!window.supabase || !window.supabase.createClient){
       supabaseInitError = 'A biblioteca do Supabase não carregou. Verifique a ligação à internet, ou se algum bloqueador de anúncios/privacidade está a impedir o carregamento de unpkg.com.';
     } else {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { storage: safeAuthStorage(), persistSession: true, autoRefreshToken: true }
+      });
     }
   } catch(e){
     supabaseInitError = 'Não foi possível iniciar o Supabase: ' + (e && e.message ? e.message : String(e)) + '. Confirme que copiou corretamente o Project URL e a anon key.';
