@@ -512,7 +512,7 @@ function seedData(){
 /* ============================== Configuração do Supabase ============================== */
 // Substitua estes dois valores pelos do seu projeto Supabase:
 // Project Settings → API → Project URL / anon public key
-const SUPABASE_URL = 'https://mzbxryxpaupakdjkfizl.supabaseClient.co';
+const SUPABASE_URL = 'https://mzbxryxpaupakdjkfizl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_17FQtwKCRzcAtF2jLCuFfw_qTcP3IPJ';
 
 // Adaptador de armazenamento à prova de bloqueios: alguns navegadores
@@ -551,7 +551,7 @@ let supabaseInitError = '';
 
 // Em vez de assumir que window.supabase já está pronto assim que este script
 // corre, esperamos por ele (até 5s) — evita falhas por questões de timing
-// entre o carregamento do supabaseClient.js e a execução deste código.
+// entre o carregamento da biblioteca e a execução deste código.
 function useSupabaseInit(){
   const [status, setStatus] = useState(supabaseConfigured ? 'checking' : 'unconfigured');
 
@@ -829,7 +829,7 @@ function ConfigNeededScreen(){
           <code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code> pelos do seu projeto
           (Supabase → Project Settings → API).
         </p>
-        <p style={{color:'var(--gray)', fontSize:12.5}}>Também precisa de correr o ficheiro <code>supabaseClient-schema.sql</code> no SQL Editor do Supabase antes de usar a app.</p>
+        <p style={{color:'var(--gray)', fontSize:12.5}}>Também precisa de correr o ficheiro <code>supabase-schema.sql</code> no SQL Editor do Supabase antes de usar a app.</p>
       </div>
     </div>
   );
