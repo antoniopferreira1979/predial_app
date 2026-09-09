@@ -1573,7 +1573,7 @@ function ImovelForm({item, proprietarios, onGerirProprietarios, onSave, onCancel
 
 /* ============================== Proprietários (co-propriedade) ============================== */
 function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
-  const empty = {id:'', imovelId:'', nome:'', nif:'', percentagem:'', contacto:'', notas:''};
+  const empty = {id:'', imovelId:'', nome:'', nif:'', email:'', percentagem:'', contacto:'', notas:''};
   const imovelInfo = (id) => data.imoveis.find(i=>i.id===id);
 
   // Agrupar proprietários por imóvel para mostrar a verificação de soma == 100%
@@ -1602,7 +1602,7 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
             <div className="table-wrap" style={{border:'none'}}>
               <table>
                 <thead><tr>
-                  <th>Proprietário</th><th>NIF</th><th>Contacto</th><th>% Propriedade</th><th>Renda Líquida (Quota)</th><th></th>
+                  <th>Proprietário</th><th>NIF</th><th>Email</th><th>Contacto</th><th>% Propriedade</th><th>Renda Líquida (Quota)</th><th></th>
                 </tr></thead>
                 <tbody>
                   {donos.map(p=>{
@@ -1611,6 +1611,13 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
                       <tr key={p.id}>
                         <td style={{fontWeight:600}}>{p.nome}</td>
                         <td>{p.nif}</td>
+                        <td>
+                          {p.email ? (
+                            <span>{p.email} <Tag kind="verdigris">acesso</Tag></span>
+                          ) : (
+                            <span style={{color:'var(--gray)', fontSize:12}}>sem email — sem acesso</span>
+                          )}
+                        </td>
                         <td>{p.contacto}</td>
                         <td>{(Number(p.percentagem||0)*100).toFixed(0)}%</td>
                         <td style={{fontWeight:600, color:'var(--telha)'}}>{fmtEUR(quota)}</td>
