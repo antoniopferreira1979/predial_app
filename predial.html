@@ -1114,8 +1114,10 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut}){
   const NAV = [
     {id:'resumo', label:'Resumo', icon:'🏛'},
     {id:'imoveis', label:'Os Meus Imóveis', icon:'🏠'},
+    {id:'pagamentos', label:'Pagamentos', icon:'€'},
     {id:'despesas', label:'Despesas', icon:'📊'},
     {id:'manutencao', label:'Manutenção', icon:'🔧'},
+    {id:'relatorio', label:'Relatório Financeiro', icon:'📈'},
   ];
 
   return (
@@ -1207,12 +1209,20 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut}){
           </PageShell>
         )}
 
+        {view==='pagamentos' && (
+          <PagamentosView data={data} addOrEdit={addOrEdit} remove={noRemove} modal={modal} setModal={setModal} canEdit={false} />
+        )}
+
         {view==='despesas' && (
           <DespesasView data={data} addOrEdit={addOrEdit} remove={noRemove} modal={modal} setModal={setModal} userEmail={userEmail} userLabel={meuNome||userEmail} canEdit={false} />
         )}
 
         {view==='manutencao' && (
           <ManutencaoView data={data} addOrEdit={addOrEdit} remove={noRemove} modal={modal} setModal={setModal} userEmail={userEmail} userLabel={meuNome||userEmail} canEdit={false} />
+        )}
+
+        {view==='relatorio' && (
+          <RelatorioFinanceiroView data={data} lockedEmail={userEmail} />
         )}
       </main>
     </div>
@@ -2442,7 +2452,8 @@ function FiadorForm({item, contratos, imoveis, onSave, onCancel}){
 }
 
 /* ============================== Pagamentos ============================== */
-function PagamentosView({data, addOrEdit, remove, modal, setModal}){
+function PagamentosView({data, addOrEdit, remove, modal, setModal, canEdit}){
+  canEdit = canEdit===undefined ? true : canEdit;
   const empty = {id:'', contratoId:'', mesRef:'', valorDevido:'', dataVencimento:'', dataPagamento:'', valorPago:'', notas:''};
   const contratoLabel = (id) => {
     const c = data.contratos.find(c=>c.id===id);
@@ -2452,7 +2463,7 @@ function PagamentosView({data, addOrEdit, remove, modal, setModal}){
   };
 
   return (
-    <PageShell title="Pagamentos" subtitle="Controlo de rendas e emissão de recibos." onNew={()=>setModal({type:'pagamento', item:{...empty, id:uid('PG')}})}>
+    <PageShell title="Pagamentos" subtitle="Controlo de rendas e emissão de recibos." onNew={canEdit ? (()=>setModal({type:'pagamento', item:{...empty, id:uid('PG')}})) : undefined}>
       <div className="table-wrap">
         <table>
           <thead><tr><th>Imóvel</th><th>Mês</th><th>Devido</th><th>Vencimento</th><th>Valor Bruto</th><th>Retenção</th><th>Valor Líquido</th><th>Estado</th><th></th></tr></thead>
@@ -2472,10 +2483,12 @@ function PagamentosView({data, addOrEdit, remove, modal, setModal}){
                   <td style={{fontWeight:600, color:'var(--verdigris)'}}>{fmtEUR(calc.liquido)}</td>
                   <td><Tag kind={est.kind}>{est.label}</Tag></td>
                   <td>
-                    <div className="row-actions">
-                      <button className="icon-btn" onClick={()=>setModal({type:'pagamento', item:p})}>Editar</button>
-                      <button className="icon-btn danger" onClick={()=>remove('pagamentos', p.id)}>Remover</button>
-                    </div>
+                    {canEdit ? (
+                      <div className="row-actions">
+                        <button className="icon-btn" onClick={()=>setModal({type:'pagamento', item:p})}>Editar</button>
+                        <button className="icon-btn danger" onClick={()=>remove('pagamentos', p.id)}>Remover</button>
+                      </div>
+                    ) : <span style={{color:'var(--gray)', fontSize:12}}>—</span>}
                   </td>
                 </tr>
               );
@@ -3568,7 +3581,7 @@ function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
   return linhas;
 }
 
-function RelatorioFinanceiroView({data}){
+function RelatorioFinanceiroView({data, lockedEmail}){
   const anosDisponiveis = [...new Set([
     ...data.pagamentos.map(p=>p.mesRef ? p.mesRef.slice(0,4) : null),
     ...data.despesas.map(d=>d.anoFiscal ? String(d.anoFiscal) : null),
@@ -3580,7 +3593,10 @@ function RelatorioFinanceiroView({data}){
   const [exportando, setExportando] = useState('');
 
   const proprietariosNomes = [...new Set(data.proprietarios.map(p=>p.nome))].sort();
-  const linhas = buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario);
+  let linhas = buildRelatorio(data, anoFiscal, filtroImovelId, lockedEmail ? 'todos' : filtroProprietario);
+  if(lockedEmail){
+    linhas = linhas.filter(l => (l.email||'').toLowerCase() === lockedEmail.toLowerCase());
+  }
 
   const totais = linhas.reduce((acc,l)=>({
     rendaBruta: acc.rendaBruta+l.rendaBruta,
@@ -3648,7 +3664,7 @@ function RelatorioFinanceiroView({data}){
   };
 
   return (
-    <PageShell title="Relatório Financeiro" subtitle="Rendas recebidas, retenções, valor líquido e despesas dedutíveis, por ano fiscal.">
+    <PageShell title="Relatório Financeiro" subtitle={lockedEmail ? "A sua quota nos imóveis onde é proprietário, por ano fiscal." : "Rendas recebidas, retenções, valor líquido e despesas dedutíveis, por ano fiscal."}>
       <div className="toolbar">
         <div style={{display:'flex', gap:10}}>
           <select className="search" style={{width:130}} value={anoFiscal} onChange={e=>setAnoFiscal(e.target.value)}>
@@ -3659,10 +3675,12 @@ function RelatorioFinanceiroView({data}){
             <option value="todos">Todos os imóveis</option>
             {data.imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
           </select>
-          <select className="search" style={{width:200}} value={filtroProprietario} onChange={e=>setFiltroProprietario(e.target.value)}>
-            <option value="todos">Todos os proprietários</option>
-            {proprietariosNomes.map(n=><option key={n} value={n}>{n}</option>)}
-          </select>
+          {!lockedEmail && (
+            <select className="search" style={{width:200}} value={filtroProprietario} onChange={e=>setFiltroProprietario(e.target.value)}>
+              <option value="todos">Todos os proprietários</option>
+              {proprietariosNomes.map(n=><option key={n} value={n}>{n}</option>)}
+            </select>
+          )}
         </div>
         <div style={{display:'flex', gap:10}}>
           <button className="btn btn-ghost" disabled={exportando==='pdf'} onClick={exportarPDF}>{exportando==='pdf' ? 'A gerar…' : '📄 Exportar PDF'}</button>
