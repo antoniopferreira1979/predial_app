@@ -696,7 +696,7 @@ function useAuth(ready){
 }
 
 /* ============================== Storage hook (dados sincronizados via Supabase) ============================== */
-function useAppData(userId){
+function useAppData(userId, scopeUserId){
   const [data, setData] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [syncError, setSyncError] = useState('');
@@ -708,7 +708,9 @@ function useAppData(userId){
       try{
         const keys = Object.keys(TABLE_MAP);
         const results = await Promise.all(keys.map(async (key) => {
-          const { data: rows, error } = await supabaseClient.from(TABLE_MAP[key]).select('data');
+          let query = supabaseClient.from(TABLE_MAP[key]).select('data');
+          if(scopeUserId){ query = query.eq('user_id', scopeUserId); }
+          const { data: rows, error } = await query;
           if(error) throw error;
           return [key, (rows||[]).map(r => r.data)];
         }));
@@ -722,7 +724,7 @@ function useAppData(userId){
         setLoaded(true);
       }
     })();
-  }, [userId]);
+  }, [userId, scopeUserId]);
 
   return [data, setData, loaded, syncError];
 }
@@ -801,7 +803,7 @@ function percentByImovel(proprietarios, imovelId){
 
 /* ============================== App ============================== */
 function useRole(session){
-  const [roleInfo, setRoleInfo] = useState(undefined); // undefined=a verificar, {role:'administrador'|'proprietario', ownerUserId, meuNome}
+  const [roleInfo, setRoleInfo] = useState(undefined); // undefined=a verificar
 
   useEffect(() => {
     if(!session){ setRoleInfo(undefined); return; }
@@ -810,21 +812,31 @@ function useRole(session){
       try{
         const { data: ownRows } = await supabaseClient.from('imoveis').select('id').eq('user_id', session.user.id).limit(1);
         if(cancelled) return;
-        if(ownRows && ownRows.length>0){
-          setRoleInfo({role:'administrador', ownerUserId: session.user.id});
-          return;
-        }
+        const isAdmin = ownRows && ownRows.length>0;
+
+        const meuEmail = (session.user.email||'').toLowerCase();
         const { data: coRows } = await supabaseClient.from('proprietarios').select('id,user_id,data');
         if(cancelled) return;
-        const meuEmail = (session.user.email||'').toLowerCase();
-        const meuRegisto = (coRows||[]).find(r => (r.data && (r.data.email||'').toLowerCase())===meuEmail);
-        if(meuRegisto){
+        // Só conta como "coproprietário noutra conta" se o user_id for diferente do meu —
+        // um registo de proprietário dentro da própria conta não é um papel extra.
+        const meuRegisto = (coRows||[]).find(r =>
+          (r.data && (r.data.email||'').toLowerCase())===meuEmail && r.user_id !== session.user.id
+        );
+
+        if(isAdmin){
+          setRoleInfo({
+            role: 'administrador', ownerUserId: session.user.id,
+            proprietarioDisponivel: !!meuRegisto,
+            proprietarioOwnerUserId: meuRegisto ? meuRegisto.user_id : null,
+            proprietarioNome: meuRegisto ? meuRegisto.data.nome : null,
+          });
+        } else if(meuRegisto){
           setRoleInfo({role:'proprietario', ownerUserId: meuRegisto.user_id, meuNome: meuRegisto.data.nome});
         } else {
-          setRoleInfo({role:'administrador', ownerUserId: session.user.id});
+          setRoleInfo({role:'administrador', ownerUserId: session.user.id, proprietarioDisponivel:false});
         }
       } catch(e){
-        if(!cancelled) setRoleInfo({role:'administrador', ownerUserId: session.user.id});
+        if(!cancelled) setRoleInfo({role:'administrador', ownerUserId: session.user.id, proprietarioDisponivel:false});
       }
     })();
     return () => { cancelled = true; };
@@ -837,6 +849,7 @@ function App(){
   const initStatus = useSupabaseInit();
   const {session, authError, signUp, signIn, signOut} = useAuth(initStatus === 'ready');
   const roleInfo = useRole(initStatus==='ready' ? session : null);
+  const [viewMode, setViewMode] = useState('administrador'); // só relevante quando os dois papéis estão disponíveis
 
   if(initStatus === 'unconfigured'){
     return <ConfigNeededScreen/>;
@@ -860,7 +873,10 @@ function App(){
   if(roleInfo.role === 'proprietario'){
     return <ProprietarioView userId={session.user.id} userEmail={session.user.email} ownerUserId={roleInfo.ownerUserId} meuNome={roleInfo.meuNome} onSignOut={signOut} />;
   }
-  return <MainApp userId={session.user.id} userEmail={session.user.email} onSignOut={signOut} />;
+  if(viewMode==='proprietario' && roleInfo.proprietarioDisponivel){
+    return <ProprietarioView userId={session.user.id} userEmail={session.user.email} ownerUserId={roleInfo.proprietarioOwnerUserId} meuNome={roleInfo.proprietarioNome} onSignOut={signOut} onSwitchToAdmin={()=>setViewMode('administrador')} />;
+  }
+  return <MainApp userId={session.user.id} userEmail={session.user.email} onSignOut={signOut} proprietarioDisponivel={roleInfo.proprietarioDisponivel} onSwitchToProprietario={()=>setViewMode('proprietario')} />;
 }
 
 function InitErrorScreen({message}){
@@ -944,8 +960,8 @@ function LoginScreen({authError, onSignUp, onSignIn}){
   );
 }
 
-function MainApp({userId, userEmail, onSignOut}){
-  const [data, setData, loaded, syncError] = useAppData(userId);
+function MainApp({userId, userEmail, onSignOut, proprietarioDisponivel, onSwitchToProprietario}){
+  const [data, setData, loaded, syncError] = useAppData(userId, userId);
   const [view, setView] = useState('dashboard');
   const [modal, setModal] = useState(null); // {type, item}
   const autoGenRan = useRef(false);
@@ -1052,6 +1068,11 @@ function MainApp({userId, userEmail, onSignOut}){
         <div className="sidebar-foot">
           {syncError ? <div style={{color:'#F3C7BC', marginBottom:8}}>⚠ {syncError}</div> : null}
           <div style={{marginBottom:8, wordBreak:'break-all'}}>{userEmail}</div>
+          {proprietarioDisponivel && (
+            <button className="btn btn-ghost btn-sm" style={{color:'#EDEFF2', borderColor:'rgba(255,255,255,0.25)', width:'100%', marginBottom:8}} onClick={onSwitchToProprietario}>
+              Ver como Proprietário
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm" style={{color:'#EDEFF2', borderColor:'rgba(255,255,255,0.25)'}} onClick={onSignOut}>Sair</button>
         </div>
       </aside>
@@ -1078,8 +1099,8 @@ function MainApp({userId, userEmail, onSignOut}){
 
 /* ============================== Dashboard ============================== */
 /* ============================== Painel de Proprietário (só leitura + registo de despesas/manutenção) ============================== */
-function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut}){
-  const [data, setData, loaded, syncError] = useAppData(userId);
+function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, onSwitchToAdmin}){
+  const [data, setData, loaded, syncError] = useAppData(userId, ownerUserId);
   const [view, setView] = useState('resumo');
   const [modal, setModal] = useState(null);
   const [anoFiscal, setAnoFiscal] = useState(String(new Date().getFullYear()));
@@ -1139,6 +1160,11 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut}){
         <div className="sidebar-foot">
           {syncError ? <div style={{color:'#F3C7BC', marginBottom:8}}>⚠ {syncError}</div> : null}
           <div style={{marginBottom:8, wordBreak:'break-all'}}>{meuNome || userEmail}</div>
+          {onSwitchToAdmin && (
+            <button className="btn btn-ghost btn-sm" style={{color:'#EDEFF2', borderColor:'rgba(255,255,255,0.25)', width:'100%', marginBottom:8}} onClick={onSwitchToAdmin}>
+              Voltar a Administrador
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm" style={{color:'#EDEFF2', borderColor:'rgba(255,255,255,0.25)'}} onClick={onSignOut}>Sair</button>
         </div>
       </aside>
