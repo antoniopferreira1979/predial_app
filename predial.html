@@ -760,7 +760,12 @@ function estadoManutTag(estado){
 }
 
 function estadoPagamento(p){
-  if(p.valorPago){
+  if(p.valorPago!=='' && p.valorPago!=null && p.valorPago!==undefined){
+    const devido = Number(p.valorDevido||0);
+    const pago = Number(p.valorPago||0);
+    if(devido>0 && pago < devido - 0.01){
+      return {label:'Pago Parcialmente', kind:'amber'};
+    }
     if(p.dataPagamento && p.dataVencimento && p.dataPagamento > p.dataVencimento) return {label:'Pago com Atraso', kind:'amber'};
     return {label:'Pago', kind:'verdigris'};
   }
@@ -1129,8 +1134,8 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
   const totais = minhasLinhas.reduce((acc,l)=>({
     rendaBruta: acc.rendaBruta+l.rendaBruta, irsRetido: acc.irsRetido+l.irsRetido,
     valorLiquido: acc.valorLiquido+l.valorLiquido, despesasDedutiveis: acc.despesasDedutiveis+l.despesasDedutiveis,
-    resultado: acc.resultado+l.resultado,
-  }), {rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, resultado:0});
+    resultado: acc.resultado+l.resultado, valorEmFalta: acc.valorEmFalta+(l.valorEmFalta||0),
+  }), {rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, resultado:0, valorEmFalta:0});
 
   const NAV = [
     {id:'resumo', label:'Resumo', icon:'🏛'},
@@ -1183,12 +1188,13 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
               </select>
             </div>
             <div className="content">
-              <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr'}}>
+              <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1fr'}}>
                 <div className="kpi-card"><div className="label">A sua renda bruta</div><div className="value">{fmtEUR(totais.rendaBruta)}</div></div>
                 <div className="kpi-card"><div className="label">IRS retido</div><div className="value rust">{fmtEUR(totais.irsRetido)}</div></div>
                 <div className="kpi-card"><div className="label">Valor líquido</div><div className="value verdigris">{fmtEUR(totais.valorLiquido)}</div></div>
                 <div className="kpi-card"><div className="label">As suas despesas dedutíveis</div><div className="value telha">{fmtEUR(totais.despesasDedutiveis)}</div></div>
                 <div className="kpi-card"><div className="label">O seu resultado</div><div className="value" style={{color: totais.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultado)}</div></div>
+                <div className="kpi-card"><div className="label">A sua parte em falta</div><div className="value" style={{color:'var(--amber)'}}>{fmtEUR(totais.valorEmFalta)}</div></div>
               </div>
               <div className="panel">
                 <h3>Detalhe por imóvel</h3>
@@ -1265,6 +1271,11 @@ function Dashboard({data, setView}){
     .reduce((s,c) => s + rendaAtual(c.id, c.renda, data.atualizacoesRenda), 0);
   const taxaOcup = total ? Math.round((ocupados/total)*100) : 0;
   const emAtraso = data.pagamentos.filter(p=>estadoPagamento(p).label==='Em Atraso');
+  const pagamentosParciais = data.pagamentos.filter(p=>estadoPagamento(p).label==='Pago Parcialmente');
+  const valorEmFaltaTotal = pagamentosParciais.reduce((s,p)=>{
+    const contrato = data.contratos.find(c=>c.id===p.contratoId);
+    return s + calcPagamentoValores(p, contrato).falta;
+  }, 0);
   const tarefasPendentes = data.tarefas.filter(t=>!t.concluida).sort((a,b)=>(a.dataLimite||'').localeCompare(b.dataLimite||''));
   const proximosPagamentos = data.pagamentos
     .filter(p=>!p.valorPago)
@@ -1285,7 +1296,7 @@ function Dashboard({data, setView}){
         </div>
       </div>
       <div className="content">
-        <div className="kpi-row" style={{gridTemplateColumns:'1.2fr 1fr 1fr 1fr 1fr'}}>
+        <div className="kpi-row" style={{gridTemplateColumns:'1.2fr 1fr 1fr 1fr 1fr 1fr'}}>
           <div className="kpi-hero">
             <div className="label">Receita mensal potencial</div>
             <div className="value">{fmtEUR(receita)}</div>
@@ -1306,6 +1317,11 @@ function Dashboard({data, setView}){
           <div className="kpi-card">
             <div className="label">Pagamentos em atraso</div>
             <div className="value rust">{emAtraso.length}</div>
+          </div>
+          <div className="kpi-card">
+            <div className="label">Pagamentos parciais</div>
+            <div className="value" style={{color:'var(--amber)'}}>{pagamentosParciais.length}</div>
+            {pagamentosParciais.length>0 && <div style={{fontSize:11, color:'var(--gray)', marginTop:2}}>faltam {fmtEUR(valorEmFaltaTotal)}</div>}
           </div>
         </div>
 
@@ -1329,6 +1345,26 @@ function Dashboard({data, setView}){
                 );
               })}
             </div>
+
+            {pagamentosParciais.length>0 && (
+              <div className="panel">
+                <h3>Pagamentos parciais <span className="muted">valor em falta a receber</span></h3>
+                {pagamentosParciais.map(p=>{
+                  const ct = contratoOf(p.contratoId);
+                  const im = ct ? imovelOf(ct.imovelId) : null;
+                  const calc = calcPagamentoValores(p, ct);
+                  return (
+                    <div className="list-row" key={p.id}>
+                      <div>
+                        <div className="t1">{im ? im.nome : p.contratoId} — {p.mesRef}</div>
+                        <div className="t2">Pago {fmtEUR(p.valorPago)} de {fmtEUR(p.valorDevido)}</div>
+                      </div>
+                      <Tag kind="amber">faltam {fmtEUR(calc.falta)}</Tag>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="panel">
               <h3>Lista de espera <span className="muted">{esperaAtivos.length} interessados ativos</span></h3>
@@ -1800,11 +1836,13 @@ function estadoContrato(c){
 // usa o valor devido (estimativa).
 function calcPagamentoValores(p, contrato){
   const pago = p.valorPago!=='' && p.valorPago!=null && p.valorPago!==undefined;
-  const bruto = pago ? Number(p.valorPago) : Number(p.valorDevido||0);
+  const devido = Number(p.valorDevido||0);
+  const bruto = pago ? Number(p.valorPago) : devido;
+  const falta = pago ? Math.max(0, devido - Number(p.valorPago||0)) : 0;
   const percentagem = (contrato && contrato.sujeitoRetencao) ? Number(contrato.percentagemRetencao||0) : 0;
   const retencao = bruto * percentagem;
   const liquido = bruto - retencao;
-  return {bruto, retencao, liquido, pago, percentagem};
+  return {bruto, retencao, liquido, pago, percentagem, falta, devido};
 }
 
 function rendaAtual(contratoId, contratoRendaInicial, atualizacoesRenda){
@@ -2511,7 +2549,11 @@ function PagamentosView({data, addOrEdit, remove, modal, setModal, canEdit}){
                   <td>{p.mesRef}</td>
                   <td>{fmtEUR(p.valorDevido)}</td>
                   <td>{fmtDate(p.dataVencimento)}</td>
-                  <td style={{color: calc.pago ? 'inherit' : 'var(--gray)'}}>{fmtEUR(calc.bruto)}{!calc.pago && <div style={{fontSize:10}}>previsto</div>}</td>
+                  <td style={{color: calc.pago ? 'inherit' : 'var(--gray)'}}>
+                    {fmtEUR(calc.bruto)}
+                    {!calc.pago && <div style={{fontSize:10}}>previsto</div>}
+                    {calc.falta>0 && <div style={{fontSize:10.5, color:'var(--rust)', fontWeight:600}}>faltam {fmtEUR(calc.falta)}</div>}
+                  </td>
                   <td style={{color: calc.retencao>0 ? 'var(--rust)' : 'var(--gray)'}}>{calc.retencao>0 ? fmtEUR(calc.retencao) : '—'}</td>
                   <td style={{fontWeight:600, color:'var(--verdigris)'}}>{fmtEUR(calc.liquido)}</td>
                   <td><Tag kind={est.kind}>{est.label}</Tag></td>
@@ -3580,7 +3622,7 @@ function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
     if(filtroImovelId!=='todos' && im.id!==filtroImovelId) return;
 
     const contratosDoImovel = data.contratos.filter(c=>c.imovelId===im.id);
-    let rendaBruta = 0, irsRetido = 0;
+    let rendaBruta = 0, irsRetido = 0, valorEmFalta = 0;
     data.pagamentos.forEach(p => {
       if(p.valorPago==='' || p.valorPago==null) return; // só rendas efetivamente recebidas
       if(!p.mesRef || !p.mesRef.startsWith(String(anoFiscal))) return;
@@ -3589,6 +3631,7 @@ function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
       const calc = calcPagamentoValores(p, contrato);
       rendaBruta += calc.bruto;
       irsRetido += calc.retencao;
+      valorEmFalta += calc.falta;
     });
     const valorLiquido = rendaBruta - irsRetido;
 
@@ -3607,7 +3650,7 @@ function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
       linhas.push({
         imovelId: im.id, imovelNome: im.nome, proprietarioNome: dono.nome, email: dono.email||'', percentagem: pct,
         rendaBruta: rendaBruta*pct, irsRetido: irsRetido*pct, valorLiquido: valorLiquido*pct,
-        despesasDedutiveis: despesasDedutiveis*pct, resultado: resultado*pct,
+        despesasDedutiveis: despesasDedutiveis*pct, resultado: resultado*pct, valorEmFalta: valorEmFalta*pct,
       });
     });
   });
@@ -3637,7 +3680,8 @@ function RelatorioFinanceiroView({data, lockedEmail}){
     valorLiquido: acc.valorLiquido+l.valorLiquido,
     despesasDedutiveis: acc.despesasDedutiveis+l.despesasDedutiveis,
     resultado: acc.resultado+l.resultado,
-  }), {rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, resultado:0});
+    valorEmFalta: acc.valorEmFalta+(l.valorEmFalta||0),
+  }), {rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, resultado:0, valorEmFalta:0});
 
   const exportarExcel = () => {
     if(typeof XLSX === 'undefined'){ alert('A biblioteca de exportação para Excel não carregou. Tente recarregar a página.'); return; }
@@ -3647,9 +3691,9 @@ function RelatorioFinanceiroView({data, lockedEmail}){
         'Imóvel': l.imovelNome, 'Proprietário': l.proprietarioNome, '% Propriedade': (l.percentagem*100).toFixed(0)+'%',
         'Rendas Recebidas (Bruto)': Number(l.rendaBruta.toFixed(2)), 'IRS Retido': Number(l.irsRetido.toFixed(2)),
         'Valor Líquido': Number(l.valorLiquido.toFixed(2)), 'Despesas Dedutíveis': Number(l.despesasDedutiveis.toFixed(2)),
-        'Resultado': Number(l.resultado.toFixed(2)),
+        'Resultado': Number(l.resultado.toFixed(2)), 'Valor em Falta': Number((l.valorEmFalta||0).toFixed(2)),
       }));
-      linhasExport.push({'Imóvel':'TOTAL','Proprietário':'','% Propriedade':'','Rendas Recebidas (Bruto)':Number(totais.rendaBruta.toFixed(2)),'IRS Retido':Number(totais.irsRetido.toFixed(2)),'Valor Líquido':Number(totais.valorLiquido.toFixed(2)),'Despesas Dedutíveis':Number(totais.despesasDedutiveis.toFixed(2)),'Resultado':Number(totais.resultado.toFixed(2))});
+      linhasExport.push({'Imóvel':'TOTAL','Proprietário':'','% Propriedade':'','Rendas Recebidas (Bruto)':Number(totais.rendaBruta.toFixed(2)),'IRS Retido':Number(totais.irsRetido.toFixed(2)),'Valor Líquido':Number(totais.valorLiquido.toFixed(2)),'Despesas Dedutíveis':Number(totais.despesasDedutiveis.toFixed(2)),'Resultado':Number(totais.resultado.toFixed(2)),'Valor em Falta':Number(totais.valorEmFalta.toFixed(2))});
       const ws = XLSX.utils.json_to_sheet(linhasExport);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Relatório ' + anoFiscal);
@@ -3678,12 +3722,12 @@ function RelatorioFinanceiroView({data, lockedEmail}){
 
       doc.autoTable({
         startY: 32,
-        head: [['Imóvel','Proprietário','%','Bruto','IRS Retido','Líquido','Despesas','Resultado']],
+        head: [['Imóvel','Proprietário','%','Bruto','IRS Retido','Líquido','Despesas','Resultado','Em Falta']],
         body: linhas.map(l => [
           l.imovelNome, l.proprietarioNome, (l.percentagem*100).toFixed(0)+'%',
-          fmtEUR(l.rendaBruta), fmtEUR(l.irsRetido), fmtEUR(l.valorLiquido), fmtEUR(l.despesasDedutiveis), fmtEUR(l.resultado),
+          fmtEUR(l.rendaBruta), fmtEUR(l.irsRetido), fmtEUR(l.valorLiquido), fmtEUR(l.despesasDedutiveis), fmtEUR(l.resultado), fmtEUR(l.valorEmFalta||0),
         ]),
-        foot: [['TOTAL','','', fmtEUR(totais.rendaBruta), fmtEUR(totais.irsRetido), fmtEUR(totais.valorLiquido), fmtEUR(totais.despesasDedutiveis), fmtEUR(totais.resultado)]],
+        foot: [['TOTAL','','', fmtEUR(totais.rendaBruta), fmtEUR(totais.irsRetido), fmtEUR(totais.valorLiquido), fmtEUR(totais.despesasDedutiveis), fmtEUR(totais.resultado), fmtEUR(totais.valorEmFalta)]],
         styles: {fontSize:9},
         headStyles: {fillColor:[22,40,61]},
         footStyles: {fillColor:[243,240,232], textColor:[22,40,61], fontStyle:'bold'},
@@ -3721,17 +3765,18 @@ function RelatorioFinanceiroView({data, lockedEmail}){
         </div>
       </div>
 
-      <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr'}}>
+      <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1fr'}}>
         <div className="kpi-card"><div className="label">Rendas recebidas (bruto)</div><div className="value">{fmtEUR(totais.rendaBruta)}</div></div>
         <div className="kpi-card"><div className="label">IRS retido</div><div className="value rust">{fmtEUR(totais.irsRetido)}</div></div>
         <div className="kpi-card"><div className="label">Valor líquido</div><div className="value verdigris">{fmtEUR(totais.valorLiquido)}</div></div>
         <div className="kpi-card"><div className="label">Despesas dedutíveis</div><div className="value telha">{fmtEUR(totais.despesasDedutiveis)}</div></div>
         <div className="kpi-card"><div className="label">Resultado (líquido − despesas)</div><div className="value" style={{color: totais.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultado)}</div></div>
+        <div className="kpi-card"><div className="label">Valor em falta (pagos parcialmente)</div><div className="value" style={{color:'var(--amber)'}}>{fmtEUR(totais.valorEmFalta)}</div></div>
       </div>
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Imóvel</th><th>Proprietário</th><th>%</th><th>Rendas (Bruto)</th><th>IRS Retido</th><th>Valor Líquido</th><th>Despesas Dedutíveis</th><th>Resultado</th></tr></thead>
+          <thead><tr><th>Imóvel</th><th>Proprietário</th><th>%</th><th>Rendas (Bruto)</th><th>IRS Retido</th><th>Valor Líquido</th><th>Despesas Dedutíveis</th><th>Resultado</th><th>Em Falta</th></tr></thead>
           <tbody>
             {linhas.map((l,i)=>(
               <tr key={i}>
@@ -3743,9 +3788,10 @@ function RelatorioFinanceiroView({data, lockedEmail}){
                 <td style={{fontWeight:600, color:'var(--verdigris)'}}>{fmtEUR(l.valorLiquido)}</td>
                 <td style={{color:'var(--telha)'}}>{fmtEUR(l.despesasDedutiveis)}</td>
                 <td style={{fontWeight:700, color: l.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(l.resultado)}</td>
+                <td style={{color: l.valorEmFalta>0 ? 'var(--amber)' : 'var(--gray)', fontWeight: l.valorEmFalta>0 ? 600 : 400}}>{l.valorEmFalta>0 ? fmtEUR(l.valorEmFalta) : '—'}</td>
               </tr>
             ))}
-            {linhas.length===0 && <tr><td colSpan="8" className="empty">Sem dados para este período/filtro.</td></tr>}
+            {linhas.length===0 && <tr><td colSpan="9" className="empty">Sem dados para este período/filtro.</td></tr>}
           </tbody>
         </table>
       </div>
