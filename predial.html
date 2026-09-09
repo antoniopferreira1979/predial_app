@@ -494,7 +494,7 @@ function seedData(){
     {id:'PG002', contratoId:'CT001', mesRef:'2026-09', valorDevido:950, dataVencimento:'2026-09-08', dataPagamento:'', valorPago:'', notas:''},
   ];
   const manutencoes = [
-    {id:'MN001', imovelId:'IM003', dataPedido:'2026-08-20', descricao:'Reparação de canalização na cozinha', prioridade:'Alta', estado:'Em Curso', custo:120, fornecedor:'Canalizações Rápidas Lda'},
+    {id:'MN001', imovelId:'IM003', dataPedido:'2026-08-20', descricao:'Reparação de canalização na cozinha', prioridade:'Alta', estado:'Em Curso', custo:120, fornecedor:'Canalizações Rápidas Lda', temFatura:false, faturaNome:'', faturaTipo:'', despesaId:'', registadoPorNome:'Administrador', registadoPorEmail:'', pagoPorNome:'Ana Costa'},
   ];
   const tarefas = [
     {id:'TF001', titulo:'Renovar seguro multirriscos — IM001', dataLimite:'2026-09-15', concluida:false, notas:''},
@@ -509,16 +509,16 @@ function seedData(){
     {id:'LE003', nome:'Carla e Nuno Antunes', telefone:'915333444', email:'carla.antunes@email.com', tipo:'Apartamento', zona:'Lisboa', rendaMax:1000, quartosMin:2, dataRegisto:'2026-07-30', estado:'Contactado', notas:'Já visitaram IM001 antes de ficar ocupado'},
   ];
   const proprietarios = [
-    {id:'PR001', imovelId:'IM001', nome:'João Silva', nif:'111222333', percentagem:1, contacto:'912000111', notas:'Proprietário único'},
-    {id:'PR002', imovelId:'IM002', nome:'João Silva', nif:'111222333', percentagem:1, contacto:'912000111', notas:'Proprietário único'},
-    {id:'PR003', imovelId:'IM003', nome:'Ana Costa', nif:'222333444', percentagem:0.6, contacto:'913000222', notas:'Co-proprietária'},
-    {id:'PR004', imovelId:'IM003', nome:'Rui Costa', nif:'333444555', percentagem:0.4, contacto:'914000333', notas:'Co-proprietário (irmão)'},
+    {id:'PR001', imovelId:'IM001', nome:'João Silva', nif:'111222333', email:'', percentagem:1, contacto:'912000111', notas:'Proprietário único'},
+    {id:'PR002', imovelId:'IM002', nome:'João Silva', nif:'111222333', email:'', percentagem:1, contacto:'912000111', notas:'Proprietário único'},
+    {id:'PR003', imovelId:'IM003', nome:'Ana Costa', nif:'222333444', email:'ana.costa@email.com', percentagem:0.6, contacto:'913000222', notas:'Co-proprietária'},
+    {id:'PR004', imovelId:'IM003', nome:'Rui Costa', nif:'333444555', email:'rui.costa@email.com', percentagem:0.4, contacto:'914000333', notas:'Co-proprietário (irmão)'},
   ];
   const vistorias = [
     {id:'VT001', imovelId:'IM001', tipo:'Entrada', data:'2024-01-01', descricao:'Vistoria de entrada com a inquilina Maria Ferreira. Imóvel em bom estado geral.', notas:'', fotos:[]},
   ];
   const despesas = [
-    {id:'DP001', imovelId:'IM003', data:'2026-08-22', anoFiscal:2026, categoria:'Obras', descricao:'Reparação de canalização na cozinha', valor:120, dedutivel:true, notas:'Relacionado com o pedido de manutenção MN001', temComprovativo:false, comprovativoNome:'', comprovativoTipo:''},
+    {id:'DP001', imovelId:'IM003', data:'2026-08-22', anoFiscal:2026, categoria:'Obras', descricao:'Reparação de canalização na cozinha', valor:120, dedutivel:true, notas:'Relacionado com o pedido de manutenção MN001', temComprovativo:false, comprovativoNome:'', comprovativoTipo:'', registadoPorNome:'Administrador', registadoPorEmail:'', pagoPorNome:'Ana Costa'},
   ];
   const fiadores = [
     {id:'FD001', contratoId:'CT001', nome:'Carlos Ferreira', nif:'234567891', telefone:'915123456', email:'carlos.ferreira@email.com', morada:'Rua Nova 22, Lisboa', notas:'Pai da inquilina', documentos:[]},
@@ -800,9 +800,43 @@ function percentByImovel(proprietarios, imovelId){
 }
 
 /* ============================== App ============================== */
+function useRole(session){
+  const [roleInfo, setRoleInfo] = useState(undefined); // undefined=a verificar, {role:'administrador'|'proprietario', ownerUserId, meuNome}
+
+  useEffect(() => {
+    if(!session){ setRoleInfo(undefined); return; }
+    let cancelled = false;
+    (async () => {
+      try{
+        const { data: ownRows } = await supabaseClient.from('imoveis').select('id').eq('user_id', session.user.id).limit(1);
+        if(cancelled) return;
+        if(ownRows && ownRows.length>0){
+          setRoleInfo({role:'administrador', ownerUserId: session.user.id});
+          return;
+        }
+        const { data: coRows } = await supabaseClient.from('proprietarios').select('id,user_id,data');
+        if(cancelled) return;
+        const meuEmail = (session.user.email||'').toLowerCase();
+        const meuRegisto = (coRows||[]).find(r => (r.data && (r.data.email||'').toLowerCase())===meuEmail);
+        if(meuRegisto){
+          setRoleInfo({role:'proprietario', ownerUserId: meuRegisto.user_id, meuNome: meuRegisto.data.nome});
+        } else {
+          setRoleInfo({role:'administrador', ownerUserId: session.user.id});
+        }
+      } catch(e){
+        if(!cancelled) setRoleInfo({role:'administrador', ownerUserId: session.user.id});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session && session.user.id]);
+
+  return roleInfo;
+}
+
 function App(){
   const initStatus = useSupabaseInit();
   const {session, authError, signUp, signIn, signOut} = useAuth(initStatus === 'ready');
+  const roleInfo = useRole(initStatus==='ready' ? session : null);
 
   if(initStatus === 'unconfigured'){
     return <ConfigNeededScreen/>;
@@ -819,6 +853,12 @@ function App(){
   }
   if(!session){
     return <LoginScreen authError={authError} onSignUp={signUp} onSignIn={signIn} />;
+  }
+  if(roleInfo === undefined){
+    return <div className="auth-screen"><div className="auth-card"><div className="brand-word" style={{color:'var(--ink)'}}>Predial</div><p style={{color:'var(--gray)'}}>A preparar o seu painel…</p></div></div>;
+  }
+  if(roleInfo.role === 'proprietario'){
+    return <ProprietarioView userId={session.user.id} userEmail={session.user.email} ownerUserId={roleInfo.ownerUserId} meuNome={roleInfo.meuNome} onSignOut={signOut} />;
   }
   return <MainApp userId={session.user.id} userEmail={session.user.email} onSignOut={signOut} />;
 }
@@ -994,6 +1034,7 @@ function MainApp({userId, userEmail, onSignOut}){
         <div className="brand">
           <div className="brand-word">Predial</div>
           <div className="brand-sub">Gestão de Arrendamentos</div>
+          <div style={{marginTop:6, fontSize:10.5, fontWeight:700, letterSpacing:'0.5px', color:'#8FA3B8', textTransform:'uppercase'}}>Administrador</div>
         </div>
         <nav className="nav">
           {NAV.map(n => (
@@ -1023,9 +1064,9 @@ function MainApp({userId, userEmail, onSignOut}){
         {view==='contratos' && <ContratosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='fiadores' && <FiadoresView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='pagamentos' && <PagamentosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
-        {view==='manutencao' && <ManutencaoView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='manutencao' && <ManutencaoView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} userEmail={userEmail} userLabel="Administrador" />}
         {view==='vistorias' && <VistoriasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
-        {view==='despesas' && <DespesasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='despesas' && <DespesasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} userEmail={userEmail} userLabel="Administrador" />}
         {view==='listaespera' && <ListaEsperaView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='tarefas' && <TarefasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='documentos' && <DocumentosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
@@ -1036,6 +1077,148 @@ function MainApp({userId, userEmail, onSignOut}){
 }
 
 /* ============================== Dashboard ============================== */
+/* ============================== Painel de Proprietário (só leitura + registo de despesas/manutenção) ============================== */
+function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut}){
+  const [data, setData, loaded, syncError] = useAppData(userId);
+  const [view, setView] = useState('resumo');
+  const [modal, setModal] = useState(null);
+  const [anoFiscal, setAnoFiscal] = useState(String(new Date().getFullYear()));
+
+  if(!loaded || !data){
+    return <div style={{padding:'60px', fontFamily:'IBM Plex Sans, sans-serif', color:'#7C7A72'}}>A carregar os seus imóveis…</div>;
+  }
+
+  const update = (key, fn) => setData(d => ({...d, [key]: fn(d[key])}));
+  const addOrEdit = (key, item) => {
+    update(key, list => {
+      const exists = list.some(x => x.id === item.id);
+      return exists ? list.map(x => x.id===item.id ? item : x) : [...list, item];
+    });
+    persistUpsert(key, item, ownerUserId); // grava na conta do Administrador, não na minha
+  };
+  const noRemove = () => {}; // Proprietário não pode remover
+
+  const anosDisponiveis = [...new Set([
+    ...data.pagamentos.map(p=>p.mesRef ? p.mesRef.slice(0,4) : null),
+    ...data.despesas.map(d=>d.anoFiscal ? String(d.anoFiscal) : null),
+  ].filter(Boolean))].sort((a,b)=>b-a);
+
+  const todasLinhas = buildRelatorio(data, anoFiscal, 'todos', 'todos');
+  const minhasLinhas = todasLinhas.filter(l => (l.email||'').toLowerCase() === (userEmail||'').toLowerCase());
+  const totais = minhasLinhas.reduce((acc,l)=>({
+    rendaBruta: acc.rendaBruta+l.rendaBruta, irsRetido: acc.irsRetido+l.irsRetido,
+    valorLiquido: acc.valorLiquido+l.valorLiquido, despesasDedutiveis: acc.despesasDedutiveis+l.despesasDedutiveis,
+    resultado: acc.resultado+l.resultado,
+  }), {rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, resultado:0});
+
+  const NAV = [
+    {id:'resumo', label:'Resumo', icon:'🏛'},
+    {id:'imoveis', label:'Os Meus Imóveis', icon:'🏠'},
+    {id:'despesas', label:'Despesas', icon:'📊'},
+    {id:'manutencao', label:'Manutenção', icon:'🔧'},
+  ];
+
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-word">Predial</div>
+          <div className="brand-sub">Gestão de Arrendamentos</div>
+          <div style={{marginTop:6, fontSize:10.5, fontWeight:700, letterSpacing:'0.5px', color:'#8FA3B8', textTransform:'uppercase'}}>Proprietário</div>
+        </div>
+        <nav className="nav">
+          {NAV.map(n => (
+            <button key={n.id} className={'nav-item'+(view===n.id?' active':'')} onClick={()=>setView(n.id)}>
+              <span className="nav-icon">{n.icon}</span>
+              <span className="label">{n.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          {syncError ? <div style={{color:'#F3C7BC', marginBottom:8}}>⚠ {syncError}</div> : null}
+          <div style={{marginBottom:8, wordBreak:'break-all'}}>{meuNome || userEmail}</div>
+          <button className="btn btn-ghost btn-sm" style={{color:'#EDEFF2', borderColor:'rgba(255,255,255,0.25)'}} onClick={onSignOut}>Sair</button>
+        </div>
+      </aside>
+
+      <main className="main">
+        {view==='resumo' && (
+          <React.Fragment>
+            <div className="topbar">
+              <div>
+                <h1>Resumo</h1>
+                <p>A sua quota nos imóveis onde é proprietário.</p>
+              </div>
+              <select className="search" style={{width:130}} value={anoFiscal} onChange={e=>setAnoFiscal(e.target.value)}>
+                {anosDisponiveis.length===0 && <option value={anoFiscal}>{anoFiscal}</option>}
+                {anosDisponiveis.map(a=><option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <div className="content">
+              <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr'}}>
+                <div className="kpi-card"><div className="label">A sua renda bruta</div><div className="value">{fmtEUR(totais.rendaBruta)}</div></div>
+                <div className="kpi-card"><div className="label">IRS retido</div><div className="value rust">{fmtEUR(totais.irsRetido)}</div></div>
+                <div className="kpi-card"><div className="label">Valor líquido</div><div className="value verdigris">{fmtEUR(totais.valorLiquido)}</div></div>
+                <div className="kpi-card"><div className="label">As suas despesas dedutíveis</div><div className="value telha">{fmtEUR(totais.despesasDedutiveis)}</div></div>
+                <div className="kpi-card"><div className="label">O seu resultado</div><div className="value" style={{color: totais.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultado)}</div></div>
+              </div>
+              <div className="panel">
+                <h3>Detalhe por imóvel</h3>
+                {minhasLinhas.length===0 && <div className="empty">Sem movimentos para {anoFiscal}.</div>}
+                {minhasLinhas.map((l,i)=>(
+                  <div className="list-row" key={i}>
+                    <div>
+                      <div className="t1">{l.imovelNome}</div>
+                      <div className="t2">{(l.percentagem*100).toFixed(0)}% de propriedade</div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontWeight:700, color:'var(--verdigris)'}}>{fmtEUR(l.valorLiquido)}</div>
+                      <div className="t2">líquido</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{fontSize:11.5, color:'var(--gray)'}}>Nota: os valores de renda apresentados usam a renda inicial do contrato; atualizações de renda mais recentes podem não estar refletidas aqui.</div>
+            </div>
+          </React.Fragment>
+        )}
+
+        {view==='imoveis' && (
+          <PageShell title="Os Meus Imóveis" subtitle="Imóveis onde é proprietário.">
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Imóvel</th><th>Tipo</th><th>Estado</th><th>A sua %</th></tr></thead>
+                <tbody>
+                  {data.imoveis.map(im=>{
+                    const meu = data.proprietarios.find(p=>p.imovelId===im.id && (p.email||'').toLowerCase()===(userEmail||'').toLowerCase());
+                    return (
+                      <tr key={im.id}>
+                        <td style={{fontWeight:600}}>{im.nome}<div style={{color:'var(--gray)', fontSize:12}}>{im.morada}</div></td>
+                        <td>{im.tipo}</td>
+                        <td>{estadoImovelTag(im.estado)}</td>
+                        <td>{meu ? (Number(meu.percentagem||0)*100).toFixed(0)+'%' : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                  {data.imoveis.length===0 && <tr><td colSpan="4" className="empty">Ainda não tem imóveis associados.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </PageShell>
+        )}
+
+        {view==='despesas' && (
+          <DespesasView data={data} addOrEdit={addOrEdit} remove={noRemove} modal={modal} setModal={setModal} userEmail={userEmail} userLabel={meuNome||userEmail} canEdit={false} />
+        )}
+
+        {view==='manutencao' && (
+          <ManutencaoView data={data} addOrEdit={addOrEdit} remove={noRemove} modal={modal} setModal={setModal} userEmail={userEmail} userLabel={meuNome||userEmail} canEdit={false} />
+        )}
+      </main>
+    </div>
+  );
+}
+
 function Dashboard({data, setView}){
   const ocupados = data.imoveis.filter(i=>i.estado==='Ocupado').length;
   const vagos = data.imoveis.filter(i=>i.estado==='Vago').length;
@@ -1461,6 +1644,11 @@ function ProprietarioForm({item, imoveis, onSave, onCancel}){
         <div className="field"><label>Nome do proprietário</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
         <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /></div>
         <div className="field"><label>Contacto</label><input value={f.contacto} onChange={e=>set('contacto',e.target.value)} /></div>
+        <div className="field full">
+          <label>Email (opcional — dá acesso ao painel de Proprietário)</label>
+          <input type="email" value={f.email||''} onChange={e=>set('email',e.target.value)} placeholder="proprietario@email.com" />
+          {f.email && <div style={{fontSize:11, color:'var(--gray)'}}>Se esta pessoa criar conta com este email, entra como Proprietário: vê os seus imóveis, contas, e pode registar despesas/manutenção.</div>}
+        </div>
         <div className="field"><label>% de propriedade</label><input type="number" min="0" max="100" value={f.percentagem} onChange={e=>set('percentagem',e.target.value)} /></div>
         {imovel && (
           <div className="field full">
@@ -2390,8 +2578,9 @@ function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietari
 }
 
 /* ============================== Manutenção ============================== */
-function ManutencaoView({data, addOrEdit, remove, modal, setModal}){
-  const empty = {id:'', imovelId:'', dataPedido:todayISO(), descricao:'', prioridade:'Média', estado:'Pendente', custo:'', fornecedor:'', temFatura:false, faturaNome:'', faturaTipo:'', despesaId:''};
+function ManutencaoView({data, addOrEdit, remove, modal, setModal, userEmail, userLabel, canEdit}){
+  canEdit = canEdit===undefined ? true : canEdit;
+  const empty = {id:'', imovelId:'', dataPedido:todayISO(), descricao:'', prioridade:'Média', estado:'Pendente', custo:'', fornecedor:'', temFatura:false, faturaNome:'', faturaTipo:'', despesaId:'', registadoPorNome:userLabel||'Administrador', registadoPorEmail:userEmail||'', pagoPorNome:userLabel||'Administrador'};
   const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
   const [busyId, setBusyId] = useState(null);
 
@@ -2429,6 +2618,7 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal}){
         valor: updated.custo, dedutivel: true,
         notas: 'Criada automaticamente a partir do pedido de manutenção ' + updated.id,
         temComprovativo: updated.temFatura, comprovativoNome: updated.faturaNome, comprovativoTipo: updated.faturaTipo,
+        registadoPorNome: updated.registadoPorNome, registadoPorEmail: updated.registadoPorEmail, pagoPorNome: updated.pagoPorNome,
       });
       updated = {...updated, despesaId};
     } else if(!criarDespesa && updated.despesaId){
@@ -2467,7 +2657,7 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal}){
     <PageShell title="Manutenção" subtitle="Pedidos e intervenções nos seus imóveis." onNew={()=>setModal({type:'manut', item:{...empty, id:uid('MN')}})}>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Imóvel</th><th>Descrição</th><th>Prioridade</th><th>Estado</th><th>Custo</th><th>Fatura</th><th></th></tr></thead>
+          <thead><tr><th>Imóvel</th><th>Descrição</th><th>Prioridade</th><th>Estado</th><th>Custo</th><th>Pago por</th><th>Fatura</th><th></th></tr></thead>
           <tbody>
             {data.manutencoes.map(m=>(
               <tr key={m.id}>
@@ -2477,6 +2667,10 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal}){
                 <td>{estadoManutTag(m.estado)}</td>
                 <td>{fmtEUR(m.custo)}</td>
                 <td>
+                  {m.pagoPorNome || '—'}
+                  {m.registadoPorNome && <div style={{fontSize:11, color:'var(--gray)'}}>registado por {m.registadoPorNome}</div>}
+                </td>
+                <td>
                   {m.temFatura ? (
                     <button className="icon-btn" disabled={busyId===m.id} onClick={()=>handleView(m)}>
                       📎 {busyId===m.id ? 'A abrir…' : 'Ver'}
@@ -2485,14 +2679,16 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal}){
                   {m.despesaId && <div style={{fontSize:11, color:'var(--verdigris)', marginTop:3}}>Nas Despesas</div>}
                 </td>
                 <td>
-                  <div className="row-actions">
-                    <button className="icon-btn" onClick={()=>setModal({type:'manut', item:m})}>Editar</button>
-                    <button className="icon-btn danger" onClick={()=>handleRemove(m)}>Remover</button>
-                  </div>
+                  {canEdit ? (
+                    <div className="row-actions">
+                      <button className="icon-btn" onClick={()=>setModal({type:'manut', item:m})}>Editar</button>
+                      <button className="icon-btn danger" onClick={()=>handleRemove(m)}>Remover</button>
+                    </div>
+                  ) : <span style={{color:'var(--gray)', fontSize:12}}>—</span>}
                 </td>
               </tr>
             ))}
-            {data.manutencoes.length===0 && <tr><td colSpan="7" className="empty">Nenhum pedido de manutenção.</td></tr>}
+            {data.manutencoes.length===0 && <tr><td colSpan="8" className="empty">Nenhum pedido de manutenção.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -2570,6 +2766,12 @@ function ManutForm({item, imoveis, onSave, onCancel}){
         </div>
         <div className="field"><label>Custo (€)</label><input type="number" value={f.custo} onChange={e=>set('custo',e.target.value)} /></div>
         <div className="field"><label>Fornecedor / Técnico</label><input value={f.fornecedor} onChange={e=>set('fornecedor',e.target.value)} /></div>
+        <div className="field"><label>Pago por</label><input value={f.pagoPorNome||''} onChange={e=>set('pagoPorNome',e.target.value)} placeholder="Nome de quem pagou" /></div>
+        {f.registadoPorNome && (
+          <div className="field full" style={{fontSize:11.5, color:'var(--gray)'}}>
+            Registado por: {f.registadoPorNome}{f.registadoPorEmail ? (' · ' + f.registadoPorEmail) : ''}
+          </div>
+        )}
 
         <div className="field full">
           <label>Fatura (PDF ou foto)</label>
@@ -2778,8 +2980,9 @@ function VistoriaForm({item, imoveis, onSave, onCancel}){
 }
 
 /* ============================== Despesas ============================== */
-function DespesasView({data, addOrEdit, remove, modal, setModal}){
-  const empty = {id:'', imovelId:'', data:todayISO(), anoFiscal:new Date().getFullYear(), categoria:'Obras', descricao:'', valor:'', dedutivel:true, notas:'', temComprovativo:false, comprovativoNome:'', comprovativoTipo:''};
+function DespesasView({data, addOrEdit, remove, modal, setModal, userEmail, userLabel, canEdit}){
+  canEdit = canEdit===undefined ? true : canEdit;
+  const empty = {id:'', imovelId:'', data:todayISO(), anoFiscal:new Date().getFullYear(), categoria:'Obras', descricao:'', valor:'', dedutivel:true, notas:'', temComprovativo:false, comprovativoNome:'', comprovativoTipo:'', registadoPorNome:userLabel||'Administrador', registadoPorEmail:userEmail||'', pagoPorNome:userLabel||'Administrador'};
   const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
   const [busyId, setBusyId] = useState(null);
   const [filtroAno, setFiltroAno] = useState('todos');
@@ -2864,7 +3067,7 @@ function DespesasView({data, addOrEdit, remove, modal, setModal}){
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Data</th><th>Imóvel</th><th>Categoria</th><th>Descrição</th><th>Valor</th><th>Dedutível</th><th>Comprovativo</th><th></th></tr></thead>
+          <thead><tr><th>Data</th><th>Imóvel</th><th>Categoria</th><th>Descrição</th><th>Valor</th><th>Dedutível</th><th>Pago por</th><th>Comprovativo</th><th></th></tr></thead>
           <tbody>
             {filtradas.map(d=>(
               <tr key={d.id}>
@@ -2875,6 +3078,10 @@ function DespesasView({data, addOrEdit, remove, modal, setModal}){
                 <td>{fmtEUR(d.valor)}</td>
                 <td>{d.dedutivel ? <Tag kind="verdigris">Sim</Tag> : <Tag kind="gray">Não</Tag>}</td>
                 <td>
+                  {d.pagoPorNome || '—'}
+                  {d.registadoPorNome && <div style={{fontSize:11, color:'var(--gray)'}}>registado por {d.registadoPorNome}</div>}
+                </td>
+                <td>
                   {d.temComprovativo ? (
                     <button className="icon-btn" disabled={busyId===d.id} onClick={()=>handleView(d)}>
                       📎 {busyId===d.id ? 'A abrir…' : 'Ver'}
@@ -2882,14 +3089,16 @@ function DespesasView({data, addOrEdit, remove, modal, setModal}){
                   ) : <span style={{color:'var(--gray)', fontSize:12}}>—</span>}
                 </td>
                 <td>
-                  <div className="row-actions">
-                    <button className="icon-btn" onClick={()=>setModal({type:'despesa', item:d})}>Editar</button>
-                    <button className="icon-btn danger" onClick={()=>handleRemove(d)}>Remover</button>
-                  </div>
+                  {canEdit ? (
+                    <div className="row-actions">
+                      <button className="icon-btn" onClick={()=>setModal({type:'despesa', item:d})}>Editar</button>
+                      <button className="icon-btn danger" onClick={()=>handleRemove(d)}>Remover</button>
+                    </div>
+                  ) : <span style={{color:'var(--gray)', fontSize:12}}>—</span>}
                 </td>
               </tr>
             ))}
-            {filtradas.length===0 && <tr><td colSpan="8" className="empty">Nenhuma despesa registada para este filtro.</td></tr>}
+            {filtradas.length===0 && <tr><td colSpan="9" className="empty">Nenhuma despesa registada para este filtro.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -2968,6 +3177,12 @@ function DespesaForm({item, imoveis, onSave, onCancel}){
           </select>
         </div>
         <div className="field"><label>Ano fiscal</label><input type="number" value={f.data ? Number(f.data.slice(0,4)) : f.anoFiscal} disabled style={{color:'var(--gray)'}} /></div>
+        <div className="field"><label>Pago por</label><input value={f.pagoPorNome||''} onChange={e=>set('pagoPorNome',e.target.value)} placeholder="Nome de quem pagou" /></div>
+        {f.registadoPorNome && (
+          <div className="field full" style={{fontSize:11.5, color:'var(--gray)'}}>
+            Registado por: {f.registadoPorNome}{f.registadoPorEmail ? (' · ' + f.registadoPorEmail) : ''}
+          </div>
+        )}
 
         <div className="field full">
           <label>Comprovativo (PDF ou foto da fatura)</label>
@@ -3344,7 +3559,7 @@ function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
       if(filtroProprietario!=='todos' && dono.nome!==filtroProprietario) return;
       const pct = Number(dono.percentagem||1);
       linhas.push({
-        imovelId: im.id, imovelNome: im.nome, proprietarioNome: dono.nome, percentagem: pct,
+        imovelId: im.id, imovelNome: im.nome, proprietarioNome: dono.nome, email: dono.email||'', percentagem: pct,
         rendaBruta: rendaBruta*pct, irsRetido: irsRetido*pct, valorLiquido: valorLiquido*pct,
         despesasDedutiveis: despesasDedutiveis*pct, resultado: resultado*pct,
       });
