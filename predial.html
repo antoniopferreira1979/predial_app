@@ -426,6 +426,8 @@ const MAX_ANEXO_BYTES = 2 * 1024 * 1024; // 2MB por PDF anexado (limite prudente
 
 const TIPOS_VISTORIA = ['Entrada','Saída','Periódica'];
 const CATEGORIAS_DESPESA = ['Obras','Seguro','Condomínio','IMI','Manutenção','Comissões/Gestão','Outra'];
+const CATEGORIAS_DOC_CONTRATO = ['Cópia do Contrato','Certidão Permanente','CC Representante/Inquilino','Outros'];
+const CATEGORIAS_DOC_FIADOR = ['CC do Fiador','Comprovativo de Rendimento','Outros'];
 
 // Comprime e redimensiona uma imagem no browser antes de guardar (reduz muito o espaço ocupado)
 function compressImageFile(file, maxDim, quality){
@@ -518,7 +520,10 @@ function seedData(){
   const despesas = [
     {id:'DP001', imovelId:'IM003', data:'2026-08-22', anoFiscal:2026, categoria:'Obras', descricao:'Reparação de canalização na cozinha', valor:120, dedutivel:true, notas:'Relacionado com o pedido de manutenção MN001', temComprovativo:false, comprovativoNome:'', comprovativoTipo:''},
   ];
-  return {imoveis, inquilinos, contratos, pagamentos, manutencoes, tarefas, documentos, listaEspera, proprietarios, atualizacoesRenda, vistorias, despesas, renovacoes};
+  const fiadores = [
+    {id:'FD001', contratoId:'CT001', nome:'Carlos Ferreira', nif:'234567891', telefone:'915123456', email:'carlos.ferreira@email.com', morada:'Rua Nova 22, Lisboa', notas:'Pai da inquilina', documentos:[]},
+  ];
+  return {imoveis, inquilinos, contratos, pagamentos, manutencoes, tarefas, documentos, listaEspera, proprietarios, atualizacoesRenda, vistorias, despesas, renovacoes, fiadores};
 }
 
 /* ============================== Configuração do Supabase ============================== */
@@ -617,6 +622,7 @@ const TABLE_MAP = {
   vistorias: 'vistorias',
   despesas: 'despesas',
   renovacoes: 'renovacoes',
+  fiadores: 'fiadores',
 };
 
 /* ============================== Storage layer (Supabase Storage — anexos) ============================== */
@@ -956,6 +962,7 @@ function MainApp({userId, userEmail, onSignOut}){
     {id:'proprietarios', label:'Proprietários', icon:'🧾'},
     {id:'inquilinos', label:'Inquilinos', icon:'👤'},
     {id:'contratos', label:'Contratos', icon:'📄'},
+    {id:'fiadores', label:'Fiadores', icon:'🛡️'},
     {id:'pagamentos', label:'Pagamentos', icon:'€'},
     {id:'manutencao', label:'Manutenção', icon:'🔧'},
     {id:'vistorias', label:'Vistorias', icon:'📷'},
@@ -1014,6 +1021,7 @@ function MainApp({userId, userEmail, onSignOut}){
         {view==='proprietarios' && <ProprietariosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='inquilinos' && <InquilinosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='contratos' && <ContratosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
+        {view==='fiadores' && <FiadoresView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='pagamentos' && <PagamentosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='manutencao' && <ManutencaoView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='vistorias' && <VistoriasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
@@ -1583,12 +1591,46 @@ function avisoRescisaoInfo(c){
 }
 
 function ContratosView({data, addOrEdit, remove, modal, setModal}){
-  const empty = {id:'', imovelId:'', inquilinoId:'', dataInicio:'', dataFim:'', renda:'', caucao:'', prazoAvisoRescisao:120, renovavel:false, periodoRenovacaoMeses:'', sujeitoRetencao:false, percentagemRetencao:'', rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', notas:''};
+  const empty = {id:'', imovelId:'', inquilinoId:'', dataInicio:'', dataFim:'', renda:'', caucao:'', prazoAvisoRescisao:120, renovavel:false, periodoRenovacaoMeses:'', sujeitoRetencao:false, percentagemRetencao:'', rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', documentosAnexados:[], notas:''};
   const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
   const inquilinoNome = (id) => { const iq = data.inquilinos.find(i=>i.id===id); return iq ? iq.nome : '—'; };
   const [expanded, setExpanded] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [busyKey, setBusyKey] = useState(null);
 
+  const saveDocumentoContrato = async (contrato, categoria, file) => {
+    const docId = uid('CD');
+    try{
+      await storeSet('predial:anexo:contrato-doc:'+docId, file.base64);
+      const novoDoc = {id:docId, categoria, nome:file.nome, tipo:file.tipo};
+      addOrEdit('contratos', {...contrato, documentosAnexados:[...(contrato.documentosAnexados||[]), novoDoc]});
+    } catch(e){
+      const detalhe = (e && e.name==='QuotaExceededError') ? 'o espaço de armazenamento do navegador está cheio' : ((e && e.message) || 'erro desconhecido');
+      alert('Não foi possível guardar o documento (' + detalhe + ').');
+    }
+    setModal(null);
+  };
+
+  const removerDocumentoContrato = async (contrato, docId) => {
+    await storeDelete('predial:anexo:contrato-doc:'+docId);
+    addOrEdit('contratos', {...contrato, documentosAnexados:(contrato.documentosAnexados||[]).filter(d=>d.id!==docId)});
+  };
+
+  const verDocumentoContrato = async (doc) => {
+    setBusyKey(doc.id);
+    try{
+      const raw = await storeGet('predial:anexo:contrato-doc:'+doc.id);
+      if(!raw){ alert('Documento não encontrado.'); return; }
+      const blob = base64ToBlob(raw, doc.tipo);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    } catch(e){
+      alert('Não foi possível abrir o documento.');
+    } finally {
+      setBusyKey(null);
+    }
+  };
 
   const saveAtualizacao = (formData) => {
     addOrEdit('atualizacoesRenda', formData);
@@ -1768,6 +1810,28 @@ function ContratosView({data, addOrEdit, remove, modal, setModal}){
                         )}
 
                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                          <div style={{fontWeight:700, fontSize:13}}>Documentos</div>
+                          <button className="btn btn-ghost btn-sm" onClick={()=>setModal({type:'documentoContrato', item:{contrato:c}})}>+ Anexar documento</button>
+                        </div>
+                        {(c.documentosAnexados||[]).length===0 && <div style={{fontSize:12.5, color:'var(--gray)', marginBottom:16}}>Sem documentos anexados (cópia do contrato, certidão permanente, CC, etc.).</div>}
+                        {(c.documentosAnexados||[]).length>0 && (
+                          <div style={{marginBottom:16}}>
+                            {(c.documentosAnexados||[]).map(docAnexo=>(
+                              <div className="list-row" key={docAnexo.id}>
+                                <div>
+                                  <div className="t1">{docAnexo.categoria}</div>
+                                  <div className="t2">{docAnexo.nome}</div>
+                                </div>
+                                <div className="row-actions">
+                                  <button className="icon-btn" disabled={busyKey===docAnexo.id} onClick={()=>verDocumentoContrato(docAnexo)}>{busyKey===docAnexo.id ? 'A abrir…' : 'Ver'}</button>
+                                  <button className="icon-btn danger" onClick={()=>removerDocumentoContrato(c, docAnexo.id)}>Remover</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
                           <div style={{fontWeight:700, fontSize:13}}>Rescisão do contrato</div>
                           {!c.rescindido && <button className="btn btn-danger-ghost btn-sm" onClick={()=>setModal({type:'rescisao', item:{contrato:c, dataRescisao:todayISO(), motivoRescisao:''}})}>Rescindir contrato</button>}
                         </div>
@@ -1819,6 +1883,12 @@ function ContratosView({data, addOrEdit, remove, modal, setModal}){
       {modal && modal.type==='rescisao' && (
         <Modal title={'Rescindir contrato ' + modal.item.contrato.id} onClose={()=>setModal(null)}>
           <RescisaoForm item={modal.item} onSave={(formData, fileAction)=>saveRescisao(modal.item.contrato, formData, fileAction)} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+
+      {modal && modal.type==='documentoContrato' && (
+        <Modal title="Anexar documento ao contrato" onClose={()=>setModal(null)}>
+          <AnexoCategoriaForm categorias={CATEGORIAS_DOC_CONTRATO} onSave={(categoria, file)=>saveDocumentoContrato(modal.item.contrato, categoria, file)} onCancel={()=>setModal(null)} />
         </Modal>
       )}
     </PageShell>
@@ -1933,6 +2003,60 @@ function AtualizacaoRendaForm({item, onSave, onCancel}){
   );
 }
 
+function AnexoCategoriaForm({categorias, onSave, onCancel}){
+  const [categoria, setCategoria] = useState(categorias[0]);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
+
+  const onFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    setError('');
+    if(!file) return;
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const isImage = file.type.startsWith('image/');
+    if(!isPdf && !isImage){ setError('Anexe um PDF ou uma imagem.'); e.target.value=''; return; }
+    if(isImage){
+      setProcessing(true);
+      compressImageFile(file).then(({base64, tipo}) => {
+        setPendingFile({nome:file.name, tipo, base64});
+        setProcessing(false);
+      }).catch(() => { setError('Não foi possível processar a imagem.'); setProcessing(false); });
+      return;
+    }
+    if(file.size > MAX_ANEXO_BYTES){ setError('O PDF é demasiado grande (máx. 2 MB).'); e.target.value=''; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPendingFile({nome:file.name, tipo:file.type || 'application/pdf', base64:String(reader.result).split(',')[1] || ''});
+    };
+    reader.onerror = () => setError('Não foi possível ler o ficheiro.');
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field full"><label>Categoria</label>
+          <select value={categoria} onChange={e=>setCategoria(e.target.value)}>
+            {categorias.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div className="field full">
+          <label>Ficheiro (PDF ou imagem)</label>
+          <input type="file" accept="application/pdf,.pdf,image/*" onChange={onFileChange} />
+          {processing && <div style={{fontSize:12, color:'var(--gray)'}}>A processar…</div>}
+          {error && <div style={{color:'var(--rust)', fontSize:12}}>{error}</div>}
+          {pendingFile && <div style={{color:'var(--verdigris)', fontSize:12}}>Pronto para guardar: {pendingFile.nome}</div>}
+        </div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" disabled={!pendingFile} onClick={()=>onSave(categoria, pendingFile)}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
 function RescisaoForm({item, onSave, onCancel}){
   const [f, setF] = useState({dataRescisao:item.dataRescisao, motivoRescisao:item.motivoRescisao});
   const [pendingFile, setPendingFile] = useState(null);
@@ -1976,6 +2100,154 @@ function RescisaoForm({item, onSave, onCancel}){
       <div className="modal-actions">
         <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
         <button className="btn btn-danger-ghost" onClick={handleSubmit}>Confirmar rescisão</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ============================== Fiadores ============================== */
+function FiadoresView({data, addOrEdit, remove, modal, setModal}){
+  const empty = {id:'', contratoId:'', nome:'', nif:'', telefone:'', email:'', morada:'', notas:'', documentos:[]};
+  const contratoLabel = (id) => {
+    const c = data.contratos.find(c=>c.id===id);
+    if(!c) return '—';
+    const im = data.imoveis.find(i=>i.id===c.imovelId);
+    return (im ? im.nome : c.id) + ' — ' + c.id;
+  };
+  const [expanded, setExpanded] = useState(null);
+  const [busyKey, setBusyKey] = useState(null);
+
+  const saveDocumentoFiador = async (fiador, categoria, file) => {
+    const docId = uid('FDD');
+    try{
+      await storeSet('predial:anexo:fiador-doc:'+docId, file.base64);
+      const novoDoc = {id:docId, categoria, nome:file.nome, tipo:file.tipo};
+      addOrEdit('fiadores', {...fiador, documentos:[...(fiador.documentos||[]), novoDoc]});
+    } catch(e){
+      const detalhe = (e && e.name==='QuotaExceededError') ? 'o espaço de armazenamento do navegador está cheio' : ((e && e.message) || 'erro desconhecido');
+      alert('Não foi possível guardar o documento (' + detalhe + ').');
+    }
+    setModal(null);
+  };
+
+  const removerDocumentoFiador = async (fiador, docId) => {
+    await storeDelete('predial:anexo:fiador-doc:'+docId);
+    addOrEdit('fiadores', {...fiador, documentos:(fiador.documentos||[]).filter(d=>d.id!==docId)});
+  };
+
+  const verDocumentoFiador = async (doc) => {
+    setBusyKey(doc.id);
+    try{
+      const raw = await storeGet('predial:anexo:fiador-doc:'+doc.id);
+      if(!raw){ alert('Documento não encontrado.'); return; }
+      const blob = base64ToBlob(raw, doc.tipo);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    } catch(e){
+      alert('Não foi possível abrir o documento.');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleRemove = async (fd) => {
+    for(const docAnexo of (fd.documentos||[])){ await storeDelete('predial:anexo:fiador-doc:'+docAnexo.id); }
+    remove('fiadores', fd.id);
+  };
+
+  return (
+    <PageShell title="Fiadores" subtitle="Fiadores associados aos contratos, com documentos anexados." onNew={()=>setModal({type:'fiador', item:{...empty, id:uid('FD')}})}>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Nome</th><th>Contacto</th><th>Contrato</th><th>Documentos</th><th></th></tr></thead>
+          <tbody>
+            {data.fiadores.map(fd=>(
+              <React.Fragment key={fd.id}>
+                <tr>
+                  <td style={{fontWeight:600}}>{fd.nome}</td>
+                  <td>{fd.telefone}<div style={{color:'var(--gray)', fontSize:12}}>{fd.email}</div></td>
+                  <td>{contratoLabel(fd.contratoId)}</td>
+                  <td>
+                    <button className="icon-btn" onClick={()=>setExpanded(expanded===fd.id ? null : fd.id)}>
+                      {(fd.documentos||[]).length} documento{(fd.documentos||[]).length!==1?'s':''}
+                    </button>
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="icon-btn" onClick={()=>setModal({type:'fiador', item:fd})}>Editar</button>
+                      <button className="icon-btn danger" onClick={()=>handleRemove(fd)}>Remover</button>
+                    </div>
+                  </td>
+                </tr>
+                {expanded===fd.id && (
+                  <tr><td colSpan="5" style={{background:'var(--limestone)', padding:0}}>
+                    <div style={{padding:'14px 18px'}}>
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                        <div style={{fontWeight:700, fontSize:13}}>Documentos do fiador</div>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setModal({type:'documentoFiador', item:{fiador:fd}})}>+ Anexar documento</button>
+                      </div>
+                      {(fd.documentos||[]).length===0 && <div style={{fontSize:12.5, color:'var(--gray)'}}>Sem documentos anexados (CC, comprovativo de rendimento, etc.).</div>}
+                      {(fd.documentos||[]).map(docAnexo=>(
+                        <div className="list-row" key={docAnexo.id}>
+                          <div>
+                            <div className="t1">{docAnexo.categoria}</div>
+                            <div className="t2">{docAnexo.nome}</div>
+                          </div>
+                          <div className="row-actions">
+                            <button className="icon-btn" disabled={busyKey===docAnexo.id} onClick={()=>verDocumentoFiador(docAnexo)}>{busyKey===docAnexo.id ? 'A abrir…' : 'Ver'}</button>
+                            <button className="icon-btn danger" onClick={()=>removerDocumentoFiador(fd, docAnexo.id)}>Remover</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </td></tr>
+                )}
+              </React.Fragment>
+            ))}
+            {data.fiadores.length===0 && <tr><td colSpan="5" className="empty">Nenhum fiador registado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && modal.type==='fiador' && (
+        <Modal title={data.fiadores.some(x=>x.id===modal.item.id) ? 'Editar fiador' : 'Novo fiador'} onClose={()=>setModal(null)}>
+          <FiadorForm item={modal.item} contratos={data.contratos} imoveis={data.imoveis} onSave={(it)=>{addOrEdit('fiadores',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+
+      {modal && modal.type==='documentoFiador' && (
+        <Modal title="Anexar documento ao fiador" onClose={()=>setModal(null)}>
+          <AnexoCategoriaForm categorias={CATEGORIAS_DOC_FIADOR} onSave={(categoria, file)=>saveDocumentoFiador(modal.item.fiador, categoria, file)} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+
+function FiadorForm({item, contratos, imoveis, onSave, onCancel}){
+  const [f, setF] = useState(item);
+  const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  const label = (c) => { const im = imoveis.find(i=>i.id===c.imovelId); return (im?im.nome:c.id) + ' — ' + c.id; };
+  return (
+    <React.Fragment>
+      <div className="form-grid">
+        <div className="field full"><label>Nome</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
+        <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /></div>
+        <div className="field"><label>Telefone</label><input value={f.telefone} onChange={e=>set('telefone',e.target.value)} /></div>
+        <div className="field full"><label>Email</label><input value={f.email} onChange={e=>set('email',e.target.value)} /></div>
+        <div className="field full"><label>Morada</label><input value={f.morada} onChange={e=>set('morada',e.target.value)} /></div>
+        <div className="field full"><label>Contrato afiançado</label>
+          <select value={f.contratoId} onChange={e=>set('contratoId',e.target.value)}>
+            <option value="">—</option>
+            {contratos.map(c=><option key={c.id} value={c.id}>{label(c)}</option>)}
+          </select>
+        </div>
+        <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
       </div>
     </React.Fragment>
   );
