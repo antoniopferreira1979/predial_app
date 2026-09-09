@@ -1134,8 +1134,10 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
   const totais = minhasLinhas.reduce((acc,l)=>({
     rendaBruta: acc.rendaBruta+l.rendaBruta, irsRetido: acc.irsRetido+l.irsRetido,
     valorLiquido: acc.valorLiquido+l.valorLiquido, despesasDedutiveis: acc.despesasDedutiveis+l.despesasDedutiveis,
-    resultado: acc.resultado+l.resultado, valorEmFalta: acc.valorEmFalta+(l.valorEmFalta||0),
-  }), {rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, resultado:0, valorEmFalta:0});
+    despesasNaoDedutiveis: acc.despesasNaoDedutiveis+(l.despesasNaoDedutiveis||0),
+    resultado: acc.resultado+l.resultado, resultadoReal: acc.resultadoReal+(l.resultadoReal||0),
+    valorEmFalta: acc.valorEmFalta+(l.valorEmFalta||0),
+  }), {rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, despesasNaoDedutiveis:0, resultado:0, resultadoReal:0, valorEmFalta:0});
 
   const NAV = [
     {id:'resumo', label:'Resumo', icon:'🏛'},
@@ -1188,13 +1190,17 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
               </select>
             </div>
             <div className="content">
-              <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1fr'}}>
+              <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr'}}>
                 <div className="kpi-card"><div className="label">A sua renda bruta</div><div className="value">{fmtEUR(totais.rendaBruta)}</div></div>
                 <div className="kpi-card"><div className="label">IRS retido</div><div className="value rust">{fmtEUR(totais.irsRetido)}</div></div>
                 <div className="kpi-card"><div className="label">Valor líquido</div><div className="value verdigris">{fmtEUR(totais.valorLiquido)}</div></div>
-                <div className="kpi-card"><div className="label">As suas despesas dedutíveis</div><div className="value telha">{fmtEUR(totais.despesasDedutiveis)}</div></div>
-                <div className="kpi-card"><div className="label">O seu resultado</div><div className="value" style={{color: totais.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultado)}</div></div>
                 <div className="kpi-card"><div className="label">A sua parte em falta</div><div className="value" style={{color:'var(--amber)'}}>{fmtEUR(totais.valorEmFalta)}</div></div>
+              </div>
+              <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr'}}>
+                <div className="kpi-card"><div className="label">As suas despesas dedutíveis</div><div className="value telha">{fmtEUR(totais.despesasDedutiveis)}</div></div>
+                <div className="kpi-card"><div className="label">As suas despesas não dedutíveis</div><div className="value" style={{color:'var(--gray)'}}>{fmtEUR(totais.despesasNaoDedutiveis)}</div></div>
+                <div className="kpi-card"><div className="label">O seu resultado fiscal</div><div className="value" style={{color: totais.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultado)}</div></div>
+                <div className="kpi-card"><div className="label">O seu resultado real</div><div className="value" style={{color: totais.resultadoReal>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultadoReal)}</div></div>
               </div>
               <div className="panel">
                 <h3>Detalhe por imóvel</h3>
@@ -3639,7 +3645,12 @@ function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
       .filter(d => d.imovelId===im.id && d.dedutivel && Number(d.anoFiscal)===Number(anoFiscal))
       .reduce((s,d)=>s+Number(d.valor||0), 0);
 
-    const resultado = valorLiquido - despesasDedutiveis;
+    const despesasNaoDedutiveis = data.despesas
+      .filter(d => d.imovelId===im.id && !d.dedutivel && Number(d.anoFiscal)===Number(anoFiscal))
+      .reduce((s,d)=>s+Number(d.valor||0), 0);
+
+    const resultado = valorLiquido - despesasDedutiveis; // resultado fiscal (base do IRS Categoria F)
+    const resultadoReal = resultado - despesasNaoDedutiveis; // resultado real, após todas as despesas
 
     let donos = data.proprietarios.filter(p=>p.imovelId===im.id);
     if(donos.length===0) donos = [{nome: im.proprietario || '—', percentagem: 1}];
@@ -3650,7 +3661,8 @@ function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
       linhas.push({
         imovelId: im.id, imovelNome: im.nome, proprietarioNome: dono.nome, email: dono.email||'', percentagem: pct,
         rendaBruta: rendaBruta*pct, irsRetido: irsRetido*pct, valorLiquido: valorLiquido*pct,
-        despesasDedutiveis: despesasDedutiveis*pct, resultado: resultado*pct, valorEmFalta: valorEmFalta*pct,
+        despesasDedutiveis: despesasDedutiveis*pct, despesasNaoDedutiveis: despesasNaoDedutiveis*pct,
+        resultado: resultado*pct, resultadoReal: resultadoReal*pct, valorEmFalta: valorEmFalta*pct,
       });
     });
   });
@@ -3679,9 +3691,11 @@ function RelatorioFinanceiroView({data, lockedEmail}){
     irsRetido: acc.irsRetido+l.irsRetido,
     valorLiquido: acc.valorLiquido+l.valorLiquido,
     despesasDedutiveis: acc.despesasDedutiveis+l.despesasDedutiveis,
+    despesasNaoDedutiveis: acc.despesasNaoDedutiveis+(l.despesasNaoDedutiveis||0),
     resultado: acc.resultado+l.resultado,
+    resultadoReal: acc.resultadoReal+(l.resultadoReal||0),
     valorEmFalta: acc.valorEmFalta+(l.valorEmFalta||0),
-  }), {rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, resultado:0, valorEmFalta:0});
+  }), {rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, despesasNaoDedutiveis:0, resultado:0, resultadoReal:0, valorEmFalta:0});
 
   const exportarExcel = () => {
     if(typeof XLSX === 'undefined'){ alert('A biblioteca de exportação para Excel não carregou. Tente recarregar a página.'); return; }
@@ -3691,9 +3705,11 @@ function RelatorioFinanceiroView({data, lockedEmail}){
         'Imóvel': l.imovelNome, 'Proprietário': l.proprietarioNome, '% Propriedade': (l.percentagem*100).toFixed(0)+'%',
         'Rendas Recebidas (Bruto)': Number(l.rendaBruta.toFixed(2)), 'IRS Retido': Number(l.irsRetido.toFixed(2)),
         'Valor Líquido': Number(l.valorLiquido.toFixed(2)), 'Despesas Dedutíveis': Number(l.despesasDedutiveis.toFixed(2)),
-        'Resultado': Number(l.resultado.toFixed(2)), 'Valor em Falta': Number((l.valorEmFalta||0).toFixed(2)),
+        'Despesas Não Dedutíveis': Number((l.despesasNaoDedutiveis||0).toFixed(2)),
+        'Resultado Fiscal': Number(l.resultado.toFixed(2)), 'Resultado Real': Number((l.resultadoReal||0).toFixed(2)),
+        'Valor em Falta': Number((l.valorEmFalta||0).toFixed(2)),
       }));
-      linhasExport.push({'Imóvel':'TOTAL','Proprietário':'','% Propriedade':'','Rendas Recebidas (Bruto)':Number(totais.rendaBruta.toFixed(2)),'IRS Retido':Number(totais.irsRetido.toFixed(2)),'Valor Líquido':Number(totais.valorLiquido.toFixed(2)),'Despesas Dedutíveis':Number(totais.despesasDedutiveis.toFixed(2)),'Resultado':Number(totais.resultado.toFixed(2)),'Valor em Falta':Number(totais.valorEmFalta.toFixed(2))});
+      linhasExport.push({'Imóvel':'TOTAL','Proprietário':'','% Propriedade':'','Rendas Recebidas (Bruto)':Number(totais.rendaBruta.toFixed(2)),'IRS Retido':Number(totais.irsRetido.toFixed(2)),'Valor Líquido':Number(totais.valorLiquido.toFixed(2)),'Despesas Dedutíveis':Number(totais.despesasDedutiveis.toFixed(2)),'Despesas Não Dedutíveis':Number(totais.despesasNaoDedutiveis.toFixed(2)),'Resultado Fiscal':Number(totais.resultado.toFixed(2)),'Resultado Real':Number(totais.resultadoReal.toFixed(2)),'Valor em Falta':Number(totais.valorEmFalta.toFixed(2))});
       const ws = XLSX.utils.json_to_sheet(linhasExport);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Relatório ' + anoFiscal);
@@ -3722,12 +3738,12 @@ function RelatorioFinanceiroView({data, lockedEmail}){
 
       doc.autoTable({
         startY: 32,
-        head: [['Imóvel','Proprietário','%','Bruto','IRS Retido','Líquido','Despesas','Resultado','Em Falta']],
+        head: [['Imóvel','Proprietário','%','Bruto','IRS Retido','Líquido','Desp. Dedut.','Desp. Não Dedut.','Result. Fiscal','Result. Real','Em Falta']],
         body: linhas.map(l => [
           l.imovelNome, l.proprietarioNome, (l.percentagem*100).toFixed(0)+'%',
-          fmtEUR(l.rendaBruta), fmtEUR(l.irsRetido), fmtEUR(l.valorLiquido), fmtEUR(l.despesasDedutiveis), fmtEUR(l.resultado), fmtEUR(l.valorEmFalta||0),
+          fmtEUR(l.rendaBruta), fmtEUR(l.irsRetido), fmtEUR(l.valorLiquido), fmtEUR(l.despesasDedutiveis), fmtEUR(l.despesasNaoDedutiveis||0), fmtEUR(l.resultado), fmtEUR(l.resultadoReal||0), fmtEUR(l.valorEmFalta||0),
         ]),
-        foot: [['TOTAL','','', fmtEUR(totais.rendaBruta), fmtEUR(totais.irsRetido), fmtEUR(totais.valorLiquido), fmtEUR(totais.despesasDedutiveis), fmtEUR(totais.resultado), fmtEUR(totais.valorEmFalta)]],
+        foot: [['TOTAL','','', fmtEUR(totais.rendaBruta), fmtEUR(totais.irsRetido), fmtEUR(totais.valorLiquido), fmtEUR(totais.despesasDedutiveis), fmtEUR(totais.despesasNaoDedutiveis), fmtEUR(totais.resultado), fmtEUR(totais.resultadoReal), fmtEUR(totais.valorEmFalta)]],
         styles: {fontSize:9},
         headStyles: {fillColor:[22,40,61]},
         footStyles: {fillColor:[243,240,232], textColor:[22,40,61], fontStyle:'bold'},
@@ -3765,18 +3781,25 @@ function RelatorioFinanceiroView({data, lockedEmail}){
         </div>
       </div>
 
-      <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1fr'}}>
+      <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr'}}>
         <div className="kpi-card"><div className="label">Rendas recebidas (bruto)</div><div className="value">{fmtEUR(totais.rendaBruta)}</div></div>
         <div className="kpi-card"><div className="label">IRS retido</div><div className="value rust">{fmtEUR(totais.irsRetido)}</div></div>
         <div className="kpi-card"><div className="label">Valor líquido</div><div className="value verdigris">{fmtEUR(totais.valorLiquido)}</div></div>
-        <div className="kpi-card"><div className="label">Despesas dedutíveis</div><div className="value telha">{fmtEUR(totais.despesasDedutiveis)}</div></div>
-        <div className="kpi-card"><div className="label">Resultado (líquido − despesas)</div><div className="value" style={{color: totais.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultado)}</div></div>
         <div className="kpi-card"><div className="label">Valor em falta (pagos parcialmente)</div><div className="value" style={{color:'var(--amber)'}}>{fmtEUR(totais.valorEmFalta)}</div></div>
+      </div>
+      <div className="kpi-row" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr', marginTop:0}}>
+        <div className="kpi-card"><div className="label">Despesas dedutíveis (IRS)</div><div className="value telha">{fmtEUR(totais.despesasDedutiveis)}</div></div>
+        <div className="kpi-card"><div className="label">Despesas não dedutíveis</div><div className="value" style={{color:'var(--gray)'}}>{fmtEUR(totais.despesasNaoDedutiveis)}</div></div>
+        <div className="kpi-card"><div className="label">Resultado fiscal (base do IRS)</div><div className="value" style={{color: totais.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultado)}</div></div>
+        <div className="kpi-card"><div className="label">Resultado real (após todas as despesas)</div><div className="value" style={{color: totais.resultadoReal>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultadoReal)}</div></div>
       </div>
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Imóvel</th><th>Proprietário</th><th>%</th><th>Rendas (Bruto)</th><th>IRS Retido</th><th>Valor Líquido</th><th>Despesas Dedutíveis</th><th>Resultado</th><th>Em Falta</th></tr></thead>
+          <thead><tr>
+            <th>Imóvel</th><th>Proprietário</th><th>%</th><th>Rendas (Bruto)</th><th>IRS Retido</th><th>Valor Líquido</th>
+            <th>Desp. Dedutíveis</th><th>Desp. Não Dedutíveis</th><th>Resultado Fiscal</th><th>Resultado Real</th><th>Em Falta</th>
+          </tr></thead>
           <tbody>
             {linhas.map((l,i)=>(
               <tr key={i}>
@@ -3787,11 +3810,13 @@ function RelatorioFinanceiroView({data, lockedEmail}){
                 <td style={{color:'var(--rust)'}}>{fmtEUR(l.irsRetido)}</td>
                 <td style={{fontWeight:600, color:'var(--verdigris)'}}>{fmtEUR(l.valorLiquido)}</td>
                 <td style={{color:'var(--telha)'}}>{fmtEUR(l.despesasDedutiveis)}</td>
-                <td style={{fontWeight:700, color: l.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(l.resultado)}</td>
+                <td style={{color:'var(--gray)'}}>{fmtEUR(l.despesasNaoDedutiveis||0)}</td>
+                <td style={{fontWeight:600, color: l.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(l.resultado)}</td>
+                <td style={{fontWeight:700, color: l.resultadoReal>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(l.resultadoReal)}</td>
                 <td style={{color: l.valorEmFalta>0 ? 'var(--amber)' : 'var(--gray)', fontWeight: l.valorEmFalta>0 ? 600 : 400}}>{l.valorEmFalta>0 ? fmtEUR(l.valorEmFalta) : '—'}</td>
               </tr>
             ))}
-            {linhas.length===0 && <tr><td colSpan="9" className="empty">Sem dados para este período/filtro.</td></tr>}
+            {linhas.length===0 && <tr><td colSpan="11" className="empty">Sem dados para este período/filtro.</td></tr>}
           </tbody>
         </table>
       </div>
