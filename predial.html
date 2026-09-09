@@ -471,9 +471,9 @@ const ESTADOS_WAITLIST = ['Ativo','Contactado','Convertido','Inativo'];
 /* ============================== Seed data ============================== */
 function seedData(){
   const imoveis = [
-    {id:'IM001', nome:'Apartamento Alvalade T2', morada:'Av. Rio de Janeiro 45, Lisboa', tipo:'Apartamento', area:75, quartos:2, estado:'Ocupado', renda:950, proprietario:'João Silva', notas:'Renovado em 2023'},
-    {id:'IM002', nome:'Loja Baixa Chiado', morada:'Rua Garrett 12, Lisboa', tipo:'Loja', area:40, quartos:0, estado:'Vago', renda:1400, proprietario:'João Silva', notas:''},
-    {id:'IM003', nome:'Moradia Sintra V3', morada:'Rua das Flores 8, Sintra', tipo:'Moradia', area:180, quartos:3, estado:'Vago', renda:1600, proprietario:'Ana Costa', notas:'Jardim privado'},
+    {id:'IM001', nome:'Apartamento Alvalade T2', morada:'Av. Rio de Janeiro 45, Lisboa', tipo:'Apartamento', area:75, quartos:2, estado:'Ocupado', renda:950, notas:'Renovado em 2023'},
+    {id:'IM002', nome:'Loja Baixa Chiado', morada:'Rua Garrett 12, Lisboa', tipo:'Loja', area:40, quartos:0, estado:'Vago', renda:1400, notas:''},
+    {id:'IM003', nome:'Moradia Sintra V3', morada:'Rua das Flores 8, Sintra', tipo:'Moradia', area:180, quartos:3, estado:'Vago', renda:1600, notas:'Jardim privado'},
   ];
   const inquilinos = [
     {id:'INQ001', nome:'Maria Ferreira', nif:'123456789', telefone:'912345678', email:'maria.ferreira@email.com', imovelId:'IM001', dataInicio:'2024-01-01', notas:''},
@@ -1190,12 +1190,19 @@ function useFiltered(list, query, fields){
 /* ============================== Imóveis ============================== */
 function ImoveisView({data, addOrEdit, remove, modal, setModal, setView}){
   const [query, setQuery] = useState('');
-  const filtered = useFiltered(data.imoveis, query, ['nome','morada','tipo','proprietario']);
+  const filtered = useFiltered(data.imoveis, query, ['nome','morada','tipo']);
   const esperaAtivos = data.listaEspera.filter(w=>w.estado==='Ativo');
   const [expanded, setExpanded] = useState(null);
 
-  const empty = {id:'', nome:'', morada:'', tipo:'Apartamento', area:'', quartos:'', estado:'Vago', renda:'', proprietario:'', notas:''};
+  const empty = {id:'', nome:'', morada:'', tipo:'Apartamento', area:'', quartos:'', estado:'Vago', renda:'', notas:''};
   const anexosCount = (imovelId) => data.documentos.filter(d=>d.imovelId===imovelId && d.temAnexo).length;
+  const donosDoImovel = (imovelId) => data.proprietarios.filter(p=>p.imovelId===imovelId);
+  const donosResumo = (imovelId) => {
+    const donos = donosDoImovel(imovelId);
+    if(donos.length===0) return null;
+    if(donos.length===1) return donos[0].nome;
+    return donos.map(d=>d.nome + ' (' + (Number(d.percentagem||0)*100).toFixed(0) + '%)').join(', ');
+  };
 
   return (
     <PageShell title="Imóveis" subtitle="A ficha de cada imóvel sob a sua gestão." onNew={()=>setModal({type:'imovel', item:{...empty, id:uid('IM')}})}>
@@ -1210,6 +1217,7 @@ function ImoveisView({data, addOrEdit, remove, modal, setModal, setView}){
           <tbody>
             {filtered.map(im=>{
               const matches = im.estado==='Vago' ? esperaAtivos.filter(w=>matchesImovel(w,im)) : [];
+              const resumo = donosResumo(im.id);
               return (
                 <React.Fragment key={im.id}>
                   <tr>
@@ -1234,7 +1242,13 @@ function ImoveisView({data, addOrEdit, remove, modal, setModal, setView}){
                       )}
                     </td>
                     <td>{fmtEUR(im.renda)}</td>
-                    <td>{im.proprietario}</td>
+                    <td>
+                      {resumo ? resumo : (
+                        <button className="match-badge" style={{background:'var(--rust-light)', color:'var(--rust)'}} onClick={()=>setView && setView('proprietarios')}>
+                          Sem proprietário — adicionar
+                        </button>
+                      )}
+                    </td>
                     <td>
                       <div className="row-actions">
                         <button className="icon-btn" onClick={()=>setModal({type:'imovel', item:im})}>Editar</button>
@@ -1264,16 +1278,17 @@ function ImoveisView({data, addOrEdit, remove, modal, setModal, setView}){
 
       {modal && modal.type==='imovel' && (
         <Modal title={data.imoveis.some(x=>x.id===modal.item.id) ? 'Editar imóvel' : 'Novo imóvel'} onClose={()=>setModal(null)}>
-          <ImovelForm item={modal.item} onSave={(it)=>{addOrEdit('imoveis',it); setModal(null);}} onCancel={()=>setModal(null)} />
+          <ImovelForm item={modal.item} proprietarios={donosDoImovel(modal.item.id)} onGerirProprietarios={()=>{setModal(null); setView && setView('proprietarios');}} onSave={(it)=>{addOrEdit('imoveis',it); setModal(null);}} onCancel={()=>setModal(null)} />
         </Modal>
       )}
     </PageShell>
   );
 }
 
-function ImovelForm({item, onSave, onCancel}){
+function ImovelForm({item, proprietarios, onGerirProprietarios, onSave, onCancel}){
   const [f, setF] = useState(item);
   const set = (k,v)=>setF(s=>({...s,[k]:v}));
+  const jaExiste = !!item.id && (proprietarios!==undefined);
   return (
     <React.Fragment>
       <div className="form-grid">
@@ -1292,7 +1307,33 @@ function ImovelForm({item, onSave, onCancel}){
         <div className="field"><label>Área (m²)</label><input type="number" value={f.area} onChange={e=>set('area',e.target.value)} /></div>
         <div className="field"><label>Nº Quartos</label><input type="number" value={f.quartos} onChange={e=>set('quartos',e.target.value)} /></div>
         <div className="field"><label>Renda (€)</label><input type="number" value={f.renda} onChange={e=>set('renda',e.target.value)} /></div>
-        <div className="field"><label>Proprietário</label><input value={f.proprietario} onChange={e=>set('proprietario',e.target.value)} /></div>
+
+        <div className="field full">
+          <label>Proprietário(s)</label>
+          {!jaExiste ? (
+            <div style={{fontSize:12.5, color:'var(--gray)', padding:'8px 10px', background:'var(--limestone)', borderRadius:7}}>
+              Poderá associar o(s) proprietário(s) depois de guardar este imóvel, no separador Proprietários.
+            </div>
+          ) : proprietarios.length===0 ? (
+            <div style={{display:'flex', alignItems:'center', gap:10}}>
+              <span style={{fontSize:12.5, color:'var(--gray)'}}>Nenhum proprietário associado.</span>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onGerirProprietarios}>+ Adicionar na lista de Proprietários</button>
+            </div>
+          ) : (
+            <div>
+              <div style={{padding:'8px 10px', background:'var(--limestone)', borderRadius:7, fontSize:12.5}}>
+                {proprietarios.map(p=>(
+                  <div key={p.id} style={{display:'flex', justifyContent:'space-between', padding:'2px 0'}}>
+                    <span>{p.nome}</span>
+                    <span style={{fontWeight:600}}>{(Number(p.percentagem||0)*100).toFixed(0)}%</span>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={onGerirProprietarios}>Gerir na lista de Proprietários</button>
+            </div>
+          )}
+        </div>
+
         <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
       </div>
       <div className="modal-actions">
