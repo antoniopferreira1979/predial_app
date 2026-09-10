@@ -524,7 +524,7 @@ function seedData(){
     {id:'FD001', contratoId:'CT001', nome:'Carlos Ferreira', nif:'234567891', telefone:'915123456', email:'carlos.ferreira@email.com', morada:'Rua Nova 22, Lisboa', notas:'Pai da inquilina', documentos:[]},
   ];
   const acertos = [
-    {id:'AC001', imovelId:'IM003', proprietarioNome:'Ana Costa', data:'2026-08-25', valor:200, notas:'Transferência bancária referente a agosto', registadoPorNome:'Administrador'},
+    {id:'AC001', imovelId:'IM003', deNome:'Rui Costa', paraNome:'Ana Costa', data:'2026-08-25', valor:48, notas:'Transferência bancária referente a agosto', registadoPorNome:'Administrador'},
   ];
   return {imoveis, inquilinos, contratos, pagamentos, manutencoes, tarefas, documentos, listaEspera, proprietarios, atualizacoesRenda, vistorias, despesas, renovacoes, fiadores, acertos};
 }
@@ -3722,11 +3722,19 @@ function buildAcertoContas(data, imovelId, dataInicio, dataFim){
     const pct = Number(dono.percentagem||1);
     const quotaDespesa = despesasTotal * pct; // a parte que lhe cabia pagar do total de despesas
     const despesasPagas = pagamentosPorPessoa[dono.nome] || 0;
-    const reembolsoOutros = despesasPagas * (1 - pct);
-    const jaTransferido = data.acertos
-      .filter(a => a.imovelId===imovelId && a.proprietarioNome===dono.nome && dentroPeriodo(a.data))
+    const saldoBase = despesasPagas - quotaDespesa; // positivo = pagou a mais, tem a receber; negativo = deve
+    const reembolsoOutros = Math.max(0, saldoBase);
+
+    const acertosDoPeriodo = data.acertos.filter(a => a.imovelId===imovelId && dentroPeriodo(a.data));
+    const jaRecebeu = acertosDoPeriodo
+      .filter(a => (a.paraNome || a.proprietarioNome) === dono.nome)
       .reduce((s,a)=>s+Number(a.valor||0), 0);
-    const saldo = reembolsoOutros - jaTransferido;
+    const jaPagou = acertosDoPeriodo
+      .filter(a => a.deNome === dono.nome)
+      .reduce((s,a)=>s+Number(a.valor||0), 0);
+    const jaTransferido = jaRecebeu - jaPagou; // líquido: quanto já se moveu a favor deste proprietário
+
+    const saldo = saldoBase - jaTransferido;
     return {
       imovelId, imovelNome: im.nome, proprietarioNome: dono.nome, email: dono.email||'', percentagem: pct,
       despesasTotal, quotaDespesa, despesasPagas, reembolsoOutros, jaTransferido, saldo,
@@ -3744,15 +3752,31 @@ function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail
 
   const linhasTodas = filtroImovelId ? buildAcertoContas(data, filtroImovelId, dataInicio, dataFim) : [];
   const linhas = lockedEmail ? linhasTodas.filter(l => (l.email||'').toLowerCase()===lockedEmail.toLowerCase()) : linhasTodas;
+  const nomesDoImovel = linhasTodas.map(l=>l.proprietarioNome);
+
+  const nomeVisivel = (a) => a.paraNome || a.proprietarioNome || '—'; // compatível com registos antigos
 
   const historico = data.acertos
     .filter(a => a.imovelId===filtroImovelId && a.data>=dataInicio && a.data<=dataFim)
-    .filter(a => !lockedEmail || (data.proprietarios.find(p=>p.imovelId===filtroImovelId && p.nome===a.proprietarioNome && (p.email||'').toLowerCase()===lockedEmail.toLowerCase())))
+    .filter(a => !lockedEmail || (data.proprietarios.find(p=>p.imovelId===filtroImovelId && p.nome===nomeVisivel(a) && (p.email||'').toLowerCase()===lockedEmail.toLowerCase())) || (data.proprietarios.find(p=>p.imovelId===filtroImovelId && p.nome===a.deNome && (p.email||'').toLowerCase()===lockedEmail.toLowerCase())))
     .sort((a,b)=>(b.data||'').localeCompare(a.data||''));
 
   const saveAcerto = (formData) => {
     addOrEdit('acertos', formData);
     setModal(null);
+  };
+
+  const abrirRegisto = (linha) => {
+    // Sugestão automática: se só houver 2 proprietários, adivinha o outro lado.
+    const outros = nomesDoImovel.filter(n=>n!==linha.proprietarioNome);
+    const outroSugerido = outros.length===1 ? outros[0] : '';
+    const aReceber = linha.saldo >= 0;
+    setModal({type:'acerto', item:{
+      id:uid('AC'), imovelId:filtroImovelId,
+      deNome: aReceber ? outroSugerido : linha.proprietarioNome,
+      paraNome: aReceber ? linha.proprietarioNome : outroSugerido,
+      data:todayISO(), valor: Math.abs(Number(linha.saldo.toFixed(2))), notas:'', registadoPorNome:'Administrador',
+    }});
   };
 
   return (
@@ -3782,24 +3806,24 @@ function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail
           <div className="table-wrap" style={{marginBottom:20}}>
             <table>
               <thead><tr>
-                <th>Proprietário</th><th>%</th><th>Quota que lhe Cabia</th><th>Despesas que Pagou</th><th>Reembolso dos Outros</th><th>Já Transferido</th><th>Saldo a Acertar</th><th></th>
+                <th>Proprietário</th><th>%</th><th>Despesas que Pagou</th><th>Quota que lhe Cabia</th><th>Reembolso dos Outros</th><th>Já Transferido</th><th>Saldo a Acertar</th><th></th>
               </tr></thead>
               <tbody>
                 {linhas.map((l,i)=>(
                   <tr key={i}>
                     <td style={{fontWeight:600}}>{l.proprietarioNome}</td>
                     <td>{(l.percentagem*100).toFixed(0)}%</td>
-                    <td style={{color:'var(--gray)'}}>{fmtEUR(l.quotaDespesa)}</td>
                     <td>{l.despesasPagas>0 ? fmtEUR(l.despesasPagas) : '—'}</td>
+                    <td style={{color:'var(--gray)'}}>{fmtEUR(l.quotaDespesa)}</td>
                     <td style={{color: l.reembolsoOutros>0 ? 'var(--telha)' : 'var(--gray)'}}>{l.reembolsoOutros>0 ? fmtEUR(l.reembolsoOutros) : '—'}</td>
-                    <td style={{color:'var(--gray)'}}>{l.jaTransferido>0 ? fmtEUR(l.jaTransferido) : '—'}</td>
-                    <td style={{fontWeight:700, fontSize:15, color: l.saldo>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>
+                    <td style={{color:'var(--gray)'}}>{l.jaTransferido!==0 ? fmtEUR(l.jaTransferido) : '—'}</td>
+                    <td style={{fontWeight:700, fontSize:15, color: Math.abs(l.saldo)<0.005 ? 'var(--gray)' : (l.saldo>=0 ? 'var(--verdigris)' : 'var(--rust)')}}>
                       {fmtEUR(l.saldo)}
-                      <div style={{fontSize:10.5, fontWeight:500, color:'var(--gray)'}}>{l.saldo>=0 ? 'a receber' : 'a devolver'}</div>
+                      <div style={{fontSize:10.5, fontWeight:500, color:'var(--gray)'}}>{Math.abs(l.saldo)<0.005 ? 'acertado' : (l.saldo>=0 ? 'a receber' : 'a devolver')}</div>
                     </td>
                     <td>
-                      {canEdit && (
-                        <button className="btn btn-ghost btn-sm" onClick={()=>setModal({type:'acerto', item:{id:uid('AC'), imovelId:filtroImovelId, proprietarioNome:l.proprietarioNome, data:todayISO(), valor: Math.max(0, Number(l.saldo.toFixed(2))), notas:'', registadoPorNome:'Administrador'}})}>
+                      {canEdit && Math.abs(l.saldo)>=0.005 && (
+                        <button className="btn btn-ghost btn-sm" onClick={()=>abrirRegisto(l)}>
                           Registar transferência
                         </button>
                       )}
@@ -3817,7 +3841,7 @@ function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail
             {historico.map(a=>(
               <div className="list-row" key={a.id}>
                 <div>
-                  <div className="t1">{a.proprietarioNome}</div>
+                  <div className="t1">{a.deNome ? (a.deNome + ' → ' + nomeVisivel(a)) : nomeVisivel(a)}</div>
                   <div className="t2">{fmtDate(a.data)}{a.notas ? (' · ' + a.notas) : ''}</div>
                 </div>
                 <div style={{display:'flex', alignItems:'center', gap:10}}>
@@ -3832,27 +3856,43 @@ function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail
 
       {modal && modal.type==='acerto' && (
         <Modal title="Registar transferência" onClose={()=>setModal(null)}>
-          <AcertoForm item={modal.item} onSave={saveAcerto} onCancel={()=>setModal(null)} />
+          <AcertoForm item={modal.item} nomes={nomesDoImovel} onSave={saveAcerto} onCancel={()=>setModal(null)} />
         </Modal>
       )}
     </PageShell>
   );
 }
 
-function AcertoForm({item, onSave, onCancel}){
+function AcertoForm({item, nomes, onSave, onCancel}){
   const [f, setF] = useState(item);
   const set = (k,v)=>setF(s=>({...s,[k]:v}));
   return (
     <React.Fragment>
       <div className="form-grid">
-        <div className="field full"><label>Proprietário</label><input value={f.proprietarioNome} disabled style={{color:'var(--gray)'}} /></div>
+        <div className="field"><label>De (quem paga)</label>
+          <select value={f.deNome} onChange={e=>set('deNome',e.target.value)}>
+            <option value="">—</option>
+            {nomes.map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Para (quem recebe)</label>
+          <select value={f.paraNome} onChange={e=>set('paraNome',e.target.value)}>
+            <option value="">—</option>
+            {nomes.map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+        {f.deNome && f.paraNome && (
+          <div className="field full" style={{fontSize:13, fontWeight:600, color:'var(--azulejo)'}}>
+            {f.deNome} → {f.paraNome}
+          </div>
+        )}
         <div className="field"><label>Data</label><input type="date" value={f.data} onChange={e=>set('data',e.target.value)} /></div>
         <div className="field"><label>Valor (€)</label><input type="number" value={f.valor} onChange={e=>set('valor',e.target.value)} /></div>
         <div className="field full"><label>Notas</label><input placeholder="ex: transferência bancária, referência..." value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
       </div>
       <div className="modal-actions">
         <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
-        <button className="btn btn-primary" onClick={()=>onSave(f)}>Guardar</button>
+        <button className="btn btn-primary" disabled={!f.deNome || !f.paraNome} onClick={()=>onSave(f)}>Guardar</button>
       </div>
     </React.Fragment>
   );
