@@ -4,6 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Predial — Gestão de Arrendamentos</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#16283D">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Predial">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -451,6 +458,16 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
       }
     }, 50);
   });
+</script>
+<script>
+  // Regista o service worker para permitir instalar a app e abrir offline.
+  // Falha em silêncio se o navegador não suportar ou se algo bloquear —
+  // a app continua a funcionar normalmente online, só sem esta vantagem extra.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('./sw.js').catch(function(){});
+    });
+  }
 </script>
 
 <script type="text/babel">
