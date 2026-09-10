@@ -1102,7 +1102,7 @@ function MainApp({userId, userEmail, onSignOut, proprietarioDisponivel, onSwitch
         {view==='tarefas' && <TarefasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='documentos' && <DocumentosView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} />}
         {view==='relatorio' && <RelatorioFinanceiroView data={data} />}
-        {view==='acertos' && <AcertoContasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} canEdit={true} />}
+        {view==='acertos' && <AcertoContasView data={data} addOrEdit={addOrEdit} remove={remove} modal={modal} setModal={setModal} canRegister={true} canRemove={true} />}
       </main>
     </div>
   );
@@ -1271,7 +1271,7 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
         )}
 
         {view==='acertos' && (
-          <AcertoContasView data={data} addOrEdit={addOrEdit} remove={noRemove} modal={modal} setModal={setModal} lockedEmail={userEmail} canEdit={false} />
+          <AcertoContasView data={data} addOrEdit={addOrEdit} remove={noRemove} modal={modal} setModal={setModal} lockedEmail={userEmail} canRegister={true} canRemove={false} />
         )}
       </main>
     </div>
@@ -3742,8 +3742,9 @@ function buildAcertoContas(data, imovelId, dataInicio, dataFim){
   });
 }
 
-function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail, canEdit}){
-  canEdit = canEdit===undefined ? true : canEdit;
+function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail, canRegister, canRemove}){
+  canRegister = canRegister===undefined ? true : canRegister;
+  canRemove = canRemove===undefined ? true : canRemove;
   const hoje = todayISO();
   const inicioMesAtual = hoje.slice(0,8) + '01';
   const [dataInicio, setDataInicio] = useState(inicioMesAtual);
@@ -3822,7 +3823,7 @@ function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail
                       <div style={{fontSize:10.5, fontWeight:500, color:'var(--gray)'}}>{Math.abs(l.saldo)<0.005 ? 'acertado' : (l.saldo>=0 ? 'a receber' : 'a devolver')}</div>
                     </td>
                     <td>
-                      {canEdit && Math.abs(l.saldo)>=0.005 && (
+                      {canRegister && Math.abs(l.saldo)>=0.005 && (
                         <button className="btn btn-ghost btn-sm" onClick={()=>abrirRegisto(l)}>
                           Registar transferência
                         </button>
@@ -3846,7 +3847,7 @@ function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail
                 </div>
                 <div style={{display:'flex', alignItems:'center', gap:10}}>
                   <span style={{fontWeight:700, color:'var(--verdigris)'}}>{fmtEUR(a.valor)}</span>
-                  {canEdit && <button className="icon-btn danger" onClick={()=>remove('acertos', a.id)}>Remover</button>}
+                  {canRemove && <button className="icon-btn danger" onClick={()=>remove('acertos', a.id)}>Remover</button>}
                 </div>
               </div>
             ))}
