@@ -826,23 +826,29 @@ function useRole(session){
         const meuEmail = (session.user.email||'').toLowerCase();
         const { data: coRows } = await supabaseClient.from('proprietarios').select('id,user_id,data');
         if(cancelled) return;
-        // Só conta como "coproprietário noutra conta" se o user_id for diferente do meu —
-        // um registo de proprietário dentro da própria conta não é um papel extra.
-        const meuRegisto = (coRows||[]).find(r =>
-          (r.data && (r.data.email||'').toLowerCase())===meuEmail && r.user_id !== session.user.id
-        );
 
         if(isAdmin){
+          // Enquanto Administrador, também pode ser Proprietário — seja dentro da
+          // própria carteira (o seu nome no separador Proprietários), seja na
+          // carteira de outra pessoa. Qualquer um dos dois casos ativa o botão.
+          const meuRegisto = (coRows||[]).find(r => (r.data && (r.data.email||'').toLowerCase())===meuEmail);
           setRoleInfo({
             role: 'administrador', ownerUserId: session.user.id,
             proprietarioDisponivel: !!meuRegisto,
             proprietarioOwnerUserId: meuRegisto ? meuRegisto.user_id : null,
             proprietarioNome: meuRegisto ? meuRegisto.data.nome : null,
           });
-        } else if(meuRegisto){
-          setRoleInfo({role:'proprietario', ownerUserId: meuRegisto.user_id, meuNome: meuRegisto.data.nome});
         } else {
-          setRoleInfo({role:'administrador', ownerUserId: session.user.id, proprietarioDisponivel:false});
+          // Sem imóveis próprios: só conta como Proprietário se estiver listado
+          // na carteira de outra conta (a sua não tem imóveis, por definição aqui).
+          const meuRegisto = (coRows||[]).find(r =>
+            (r.data && (r.data.email||'').toLowerCase())===meuEmail && r.user_id !== session.user.id
+          );
+          if(meuRegisto){
+            setRoleInfo({role:'proprietario', ownerUserId: meuRegisto.user_id, meuNome: meuRegisto.data.nome});
+          } else {
+            setRoleInfo({role:'administrador', ownerUserId: session.user.id, proprietarioDisponivel:false});
+          }
         }
       } catch(e){
         if(!cancelled) setRoleInfo({role:'administrador', ownerUserId: session.user.id, proprietarioDisponivel:false});
