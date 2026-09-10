@@ -3752,14 +3752,15 @@ function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail
   const [filtroImovelId, setFiltroImovelId] = useState(data.imoveis[0] ? data.imoveis[0].id : '');
 
   const linhasTodas = filtroImovelId ? buildAcertoContas(data, filtroImovelId, dataInicio, dataFim) : [];
-  const linhas = lockedEmail ? linhasTodas.filter(l => (l.email||'').toLowerCase()===lockedEmail.toLowerCase()) : linhasTodas;
+  // Mostra sempre todos os proprietários do imóvel (não só o utilizador atual) —
+  // um acerto de contas só faz sentido a ver-se por inteiro, para não gerar confusão.
+  const linhas = linhasTodas;
   const nomesDoImovel = linhasTodas.map(l=>l.proprietarioNome);
 
   const nomeVisivel = (a) => a.paraNome || a.proprietarioNome || '—'; // compatível com registos antigos
 
   const historico = data.acertos
     .filter(a => a.imovelId===filtroImovelId && a.data>=dataInicio && a.data<=dataFim)
-    .filter(a => !lockedEmail || (data.proprietarios.find(p=>p.imovelId===filtroImovelId && p.nome===nomeVisivel(a) && (p.email||'').toLowerCase()===lockedEmail.toLowerCase())) || (data.proprietarios.find(p=>p.imovelId===filtroImovelId && p.nome===a.deNome && (p.email||'').toLowerCase()===lockedEmail.toLowerCase())))
     .sort((a,b)=>(b.data||'').localeCompare(a.data||''));
 
   const saveAcerto = (formData) => {
