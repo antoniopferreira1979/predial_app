@@ -1036,7 +1036,7 @@ function MainApp({userId, userEmail, onSignOut, proprietarioDisponivel, onSwitch
     {id:'tarefas', label:'Tarefas', icon:'✓'},
     {id:'documentos', label:'Documentos', icon:'📁'},
     {id:'relatorio', label:'Relatório Financeiro', icon:'📈'},
-    {id:'acertos', label:'Acerto de Contas', icon:'🤝'},
+    {id:'acertos', label:'Acerto de Contas - Despesas', icon:'🤝'},
   ];
 
   const counts = {
@@ -1152,7 +1152,7 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
     {id:'despesas', label:'Despesas', icon:'📊'},
     {id:'manutencao', label:'Manutenção', icon:'🔧'},
     {id:'relatorio', label:'Relatório Financeiro', icon:'📈'},
-    {id:'acertos', label:'Acerto de Contas', icon:'🤝'},
+    {id:'acertos', label:'Acerto de Contas - Despesas', icon:'🤝'},
   ];
 
   return (
@@ -3696,29 +3696,12 @@ function buildAcertoContas(data, imovelId, dataInicio, dataFim){
     return true;
   };
 
-  const contratosDoImovel = data.contratos.filter(c=>c.imovelId===imovelId);
-
-  let rendaBruta = 0, irsRetido = 0;
-  data.pagamentos.forEach(p => {
-    if(p.valorPago==='' || p.valorPago==null) return;
-    const refData = p.dataPagamento || p.dataVencimento || (p.mesRef ? p.mesRef+'-01' : '');
-    if(!dentroPeriodo(refData)) return;
-    const contrato = contratosDoImovel.find(c=>c.id===p.contratoId);
-    if(!contrato) return;
-    const calc = calcPagamentoValores(p, contrato);
-    rendaBruta += calc.bruto;
-    irsRetido += calc.retencao;
-  });
-  const rendaLiquida = rendaBruta - irsRetido;
-
   const despesasDoPeriodo = data.despesas.filter(d => d.imovelId===imovelId && dentroPeriodo(d.data));
   const manutencoesDoPeriodo = data.manutencoes.filter(m => m.imovelId===imovelId && !m.despesaId && dentroPeriodo(m.dataPedido) && Number(m.custo)>0);
   // (manutenções que já criaram despesa automática não se contam à parte, para não duplicar)
 
   const despesasTotal = despesasDoPeriodo.reduce((s,d)=>s+Number(d.valor||0),0)
     + manutencoesDoPeriodo.reduce((s,m)=>s+Number(m.custo||0),0);
-
-  const resultadoReal = rendaLiquida - despesasTotal;
 
   let donos = data.proprietarios.filter(p=>p.imovelId===imovelId);
   if(donos.length===0) donos = [{nome: im.proprietario || '—', percentagem: 1, email:''}];
@@ -3737,16 +3720,16 @@ function buildAcertoContas(data, imovelId, dataInicio, dataFim){
 
   return donos.map(dono => {
     const pct = Number(dono.percentagem||1);
-    const quotaResultado = resultadoReal * pct;
+    const quotaDespesa = despesasTotal * pct; // a parte que lhe cabia pagar do total de despesas
     const despesasPagas = pagamentosPorPessoa[dono.nome] || 0;
     const reembolsoOutros = despesasPagas * (1 - pct);
     const jaTransferido = data.acertos
       .filter(a => a.imovelId===imovelId && a.proprietarioNome===dono.nome && dentroPeriodo(a.data))
       .reduce((s,a)=>s+Number(a.valor||0), 0);
-    const saldo = quotaResultado + reembolsoOutros - jaTransferido;
+    const saldo = reembolsoOutros - jaTransferido;
     return {
       imovelId, imovelNome: im.nome, proprietarioNome: dono.nome, email: dono.email||'', percentagem: pct,
-      quotaResultado, despesasPagas, reembolsoOutros, jaTransferido, saldo,
+      despesasTotal, quotaDespesa, despesasPagas, reembolsoOutros, jaTransferido, saldo,
     };
   });
 }
@@ -3773,7 +3756,7 @@ function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail
   };
 
   return (
-    <PageShell title="Acerto de Contas" subtitle="Quanto cada proprietário tem a receber (ou a devolver), num período à sua escolha.">
+    <PageShell title="Acerto de Contas - Despesas" subtitle="Reembolso entre proprietários por despesas pagas do próprio bolso, num período à sua escolha.">
       <div className="toolbar">
         <div style={{display:'flex', gap:10, alignItems:'center'}}>
           <select className="search" style={{width:200}} value={filtroImovelId} onChange={e=>setFiltroImovelId(e.target.value)}>
@@ -3791,17 +3774,22 @@ function AcertoContasView({data, addOrEdit, remove, modal, setModal, lockedEmail
 
       {filtroImovelId && (
         <React.Fragment>
+          {linhas.length>0 && (
+            <div style={{fontSize:12.5, color:'var(--gray)', marginBottom:12}}>
+              Despesas totais do imóvel no período: <strong style={{color:'var(--telha)'}}>{fmtEUR(linhas[0].despesasTotal)}</strong>
+            </div>
+          )}
           <div className="table-wrap" style={{marginBottom:20}}>
             <table>
               <thead><tr>
-                <th>Proprietário</th><th>%</th><th>Quota do Resultado</th><th>Despesas que Pagou</th><th>Reembolso dos Outros</th><th>Já Transferido</th><th>Saldo a Acertar</th><th></th>
+                <th>Proprietário</th><th>%</th><th>Quota que lhe Cabia</th><th>Despesas que Pagou</th><th>Reembolso dos Outros</th><th>Já Transferido</th><th>Saldo a Acertar</th><th></th>
               </tr></thead>
               <tbody>
                 {linhas.map((l,i)=>(
                   <tr key={i}>
                     <td style={{fontWeight:600}}>{l.proprietarioNome}</td>
                     <td>{(l.percentagem*100).toFixed(0)}%</td>
-                    <td>{fmtEUR(l.quotaResultado)}</td>
+                    <td style={{color:'var(--gray)'}}>{fmtEUR(l.quotaDespesa)}</td>
                     <td>{l.despesasPagas>0 ? fmtEUR(l.despesasPagas) : '—'}</td>
                     <td style={{color: l.reembolsoOutros>0 ? 'var(--telha)' : 'var(--gray)'}}>{l.reembolsoOutros>0 ? fmtEUR(l.reembolsoOutros) : '—'}</td>
                     <td style={{color:'var(--gray)'}}>{l.jaTransferido>0 ? fmtEUR(l.jaTransferido) : '—'}</td>
