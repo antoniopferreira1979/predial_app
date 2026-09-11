@@ -615,26 +615,31 @@ const SUPABASE_ANON_KEY = 'sb_publishable_17FQtwKCRzcAtF2jLCuFfw_qTcP3IPJ';
 // para scripts de CDNs externos, o que faz o Supabase falhar ao iniciar.
 // Este adaptador tenta o localStorage e, se falhar, usa memória (a sessão
 // não sobrevive a fechar a aba nesse caso, mas a app continua a funcionar).
+// Guarda a sessão em sessionStorage (não em localStorage) de propósito:
+// sessionStorage esvazia-se sempre que o browser é fechado, obrigando a
+// fazer login de novo — mesmo que tenha fechado há poucos segundos.
+// Um simples recarregar da página (sem fechar o browser) continua a
+// manter a sessão normalmente.
 function safeAuthStorage(){
   const memory = {};
-  let localOk = true;
+  let sessionOk = true;
   try{
     const k = '__predial_probe__';
-    window.localStorage.setItem(k, '1');
-    window.localStorage.removeItem(k);
-  } catch(e){ localOk = false; }
+    window.sessionStorage.setItem(k, '1');
+    window.sessionStorage.removeItem(k);
+  } catch(e){ sessionOk = false; }
 
   return {
     getItem: (key) => {
-      if(localOk){ try{ return window.localStorage.getItem(key); } catch(e){ /* cai para memória */ } }
+      if(sessionOk){ try{ return window.sessionStorage.getItem(key); } catch(e){ /* cai para memória */ } }
       return Object.prototype.hasOwnProperty.call(memory, key) ? memory[key] : null;
     },
     setItem: (key, value) => {
-      if(localOk){ try{ window.localStorage.setItem(key, value); return; } catch(e){ /* cai para memória */ } }
+      if(sessionOk){ try{ window.sessionStorage.setItem(key, value); return; } catch(e){ /* cai para memória */ } }
       memory[key] = value;
     },
     removeItem: (key) => {
-      if(localOk){ try{ window.localStorage.removeItem(key); return; } catch(e){ /* cai para memória */ } }
+      if(sessionOk){ try{ window.sessionStorage.removeItem(key); return; } catch(e){ /* cai para memória */ } }
       delete memory[key];
     },
   };
@@ -935,11 +940,38 @@ function useRole(session){
   return roleInfo;
 }
 
+const INATIVIDADE_MINUTOS = 30; // tempo sem interação até terminar sessão automaticamente
+
+// Termina a sessão automaticamente ao fim de X minutos sem qualquer
+// interação (rato, teclado, toque, scroll) — evita sessões abertas
+// indefinidamente em computadores partilhados.
+function useInactivityLogout(active, onTimeout, timeoutMinutes){
+  useEffect(() => {
+    if(!active) return;
+    let timer;
+    const timeoutMs = timeoutMinutes * 60 * 1000;
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(onTimeout, timeoutMs);
+    };
+    const eventos = ['mousedown','mousemove','keydown','scroll','touchstart','click'];
+    eventos.forEach(ev => window.addEventListener(ev, resetTimer, {passive:true}));
+    resetTimer();
+    return () => {
+      clearTimeout(timer);
+      eventos.forEach(ev => window.removeEventListener(ev, resetTimer));
+    };
+  }, [active, onTimeout, timeoutMinutes]);
+}
+
 function App(){
   const initStatus = useSupabaseInit();
   const {session, authError, signUp, signIn, signOut} = useAuth(initStatus === 'ready');
   const roleInfo = useRole(initStatus==='ready' ? session : null);
   const [viewMode, setViewMode] = useState('administrador'); // só relevante quando os dois papéis estão disponíveis
+  const [logoutPorInatividade, setLogoutPorInatividade] = useState(false);
+
+  useInactivityLogout(!!session, () => { setLogoutPorInatividade(true); signOut(); }, INATIVIDADE_MINUTOS);
 
   if(initStatus === 'unconfigured'){
     return <ConfigNeededScreen/>;
@@ -955,7 +987,7 @@ function App(){
     return <div className="auth-screen"><div className="auth-card"><div className="brand-word" style={{color:'var(--ink)'}}>Predial</div><p style={{color:'var(--gray)'}}>A verificar sessão…</p></div></div>;
   }
   if(!session){
-    return <LoginScreen authError={authError} onSignUp={signUp} onSignIn={signIn} />;
+    return <LoginScreen authError={authError} onSignUp={signUp} onSignIn={signIn} logoutPorInatividade={logoutPorInatividade} />;
   }
   if(roleInfo === undefined){
     return <div className="auth-screen"><div className="auth-card"><div className="brand-word" style={{color:'var(--ink)'}}>Predial</div><p style={{color:'var(--gray)'}}>A preparar o seu painel…</p></div></div>;
@@ -1000,7 +1032,7 @@ function ConfigNeededScreen(){
   );
 }
 
-function LoginScreen({authError, onSignUp, onSignIn}){
+function LoginScreen({authError, onSignUp, onSignIn, logoutPorInatividade}){
   const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -1024,6 +1056,12 @@ function LoginScreen({authError, onSignUp, onSignIn}){
       <div className="auth-card">
         <div className="brand-word" style={{color:'var(--ink)', marginBottom:2}}>Predial</div>
         <div style={{color:'var(--gray)', fontSize:12.5, marginBottom:20}}>Gestão de Arrendamentos</div>
+
+        {logoutPorInatividade && (
+          <div style={{background:'var(--amber-light)', color:'var(--amber)', fontSize:12.5, padding:'9px 12px', borderRadius:7, marginBottom:16}}>
+            A sua sessão terminou automaticamente por inatividade ({INATIVIDADE_MINUTOS} minutos sem interação). Entre novamente para continuar.
+          </div>
+        )}
 
         <div style={{display:'flex', gap:8, marginBottom:18}}>
           <button className={mode==='signin' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'} onClick={()=>setMode('signin')}>Entrar</button>
