@@ -541,6 +541,10 @@ function base64ToBlob(base64, type){
 
 const TIPOS_IMOVEL = ['Apartamento','Moradia','Loja','Escritório','Garagem','Armazém','Terreno'];
 const ESTADOS_IMOVEL = ['Ocupado','Vago','Em Manutenção'];
+// Situação do imóvel na carteira — distinta do Estado (ocupação). Um imóvel Vendido
+// sai das listas ativas (nova contratação, lista de espera) mas mantém todo o
+// histórico (contratos, pagamentos, despesas, anexos) visível e filtrável.
+const SITUACOES_IMOVEL = ['Ativo','Vendido'];
 const PRIORIDADES = ['Alta','Média','Baixa'];
 const ESTADOS_MANUT = ['Pendente','Em Curso','Concluído'];
 const ESTADOS_WAITLIST = ['Ativo','Contactado','Convertido','Inativo'];
@@ -548,9 +552,9 @@ const ESTADOS_WAITLIST = ['Ativo','Contactado','Convertido','Inativo'];
 /* ============================== Seed data ============================== */
 function seedData(){
   const imoveis = [
-    {id:'IM001', nome:'Apartamento Alvalade T2', morada:'Av. Rio de Janeiro 45, Lisboa', tipo:'Apartamento', area:75, quartos:2, estado:'Ocupado', renda:950, notas:'Renovado em 2023'},
-    {id:'IM002', nome:'Loja Baixa Chiado', morada:'Rua Garrett 12, Lisboa', tipo:'Loja', area:40, quartos:0, estado:'Vago', renda:1400, notas:''},
-    {id:'IM003', nome:'Moradia Sintra V3', morada:'Rua das Flores 8, Sintra', tipo:'Moradia', area:180, quartos:3, estado:'Vago', renda:1600, notas:'Jardim privado'},
+    {id:'IM001', nome:'Apartamento Alvalade T2', morada:'Av. Rio de Janeiro 45, Lisboa', tipo:'Apartamento', area:75, quartos:2, estado:'Ocupado', renda:950, notas:'Renovado em 2023', situacao:'Ativo', dataVenda:''},
+    {id:'IM002', nome:'Loja Baixa Chiado', morada:'Rua Garrett 12, Lisboa', tipo:'Loja', area:40, quartos:0, estado:'Vago', renda:1400, notas:'', situacao:'Ativo', dataVenda:''},
+    {id:'IM003', nome:'Moradia Sintra V3', morada:'Rua das Flores 8, Sintra', tipo:'Moradia', area:180, quartos:3, estado:'Vago', renda:1600, notas:'Jardim privado', situacao:'Ativo', dataVenda:''},
   ];
   const inquilinos = [
     {id:'INQ001', nome:'Maria Ferreira', nif:'123456789', telefone:'912345678', email:'maria.ferreira@email.com', imovelId:'IM001', dataInicio:'2024-01-01', notas:''},
@@ -584,10 +588,10 @@ function seedData(){
     {id:'LE003', nome:'Carla e Nuno Antunes', telefone:'915333444', email:'carla.antunes@email.com', tipo:'Apartamento', zona:'Lisboa', rendaMax:1000, quartosMin:2, dataRegisto:'2026-07-30', estado:'Contactado', notas:'Já visitaram IM001 antes de ficar ocupado'},
   ];
   const proprietarios = [
-    {id:'PR001', imovelId:'IM001', nome:'João Silva', nif:'111222333', email:'', percentagem:1, contacto:'912000111', notas:'Proprietário único'},
-    {id:'PR002', imovelId:'IM002', nome:'João Silva', nif:'111222333', email:'', percentagem:1, contacto:'912000111', notas:'Proprietário único'},
-    {id:'PR003', imovelId:'IM003', nome:'Ana Costa', nif:'222333444', email:'ana.costa@email.com', percentagem:0.6, contacto:'913000222', notas:'Co-proprietária'},
-    {id:'PR004', imovelId:'IM003', nome:'Rui Costa', nif:'333444555', email:'rui.costa@email.com', percentagem:0.4, contacto:'914000333', notas:'Co-proprietário (irmão)'},
+    {id:'PR001', imovelId:'IM001', nome:'João Silva', nif:'111222333', email:'', percentagem:1, contacto:'912000111', notas:'Proprietário único', dataInicio:'', dataFim:''},
+    {id:'PR002', imovelId:'IM002', nome:'João Silva', nif:'111222333', email:'', percentagem:1, contacto:'912000111', notas:'Proprietário único', dataInicio:'', dataFim:''},
+    {id:'PR003', imovelId:'IM003', nome:'Ana Costa', nif:'222333444', email:'ana.costa@email.com', percentagem:0.6, contacto:'913000222', notas:'Co-proprietária', dataInicio:'', dataFim:''},
+    {id:'PR004', imovelId:'IM003', nome:'Rui Costa', nif:'333444555', email:'rui.costa@email.com', percentagem:0.4, contacto:'914000333', notas:'Co-proprietário (irmão)', dataInicio:'', dataFim:''},
   ];
   const vistorias = [
     {id:'VT001', imovelId:'IM001', tipo:'Entrada', data:'2024-01-01', descricao:'Vistoria de entrada com a inquilina Maria Ferreira. Imóvel em bom estado geral.', notas:'', fotos:[]},
@@ -837,6 +841,29 @@ function estadoImovelTag(estado){
   return <Tag kind="amber">Em Manutenção</Tag>;
 }
 
+// Situação do imóvel na carteira (Ativo/Vendido) — independente do Estado de ocupação.
+// Imóveis sem o campo definido (dados antigos) contam como Ativo.
+function situacaoImovel(im){
+  return im.situacao || 'Ativo';
+}
+function situacaoImovelTag(im){
+  if(situacaoImovel(im)!=='Vendido') return null;
+  return <Tag kind="gray">Vendido</Tag>;
+}
+
+function estadoFiadorTag(ativo){
+  return ativo ? <Tag kind="verdigris">Ativo</Tag> : <Tag kind="gray">Histórico</Tag>;
+}
+// Um fiador é "ativo" enquanto o contrato que afiança estiver Ativo ou A Expirar.
+// Não é um campo gravado — evita duplicar o mesmo tipo de erro da "dupla renda"
+// (um estado que pode ficar desincronizado do contrato real).
+function fiadorAtivo(fiador, contratos){
+  const c = contratos.find(c=>c.id===fiador.contratoId);
+  if(!c) return false;
+  const est = estadoContrato(c);
+  return est.label==='Ativo' || est.label==='A Expirar';
+}
+
 function estadoManutTag(estado){
   if(estado==='Concluído') return <Tag kind="verdigris">Concluído</Tag>;
   if(estado==='Em Curso') return <Tag kind="amber">Em Curso</Tag>;
@@ -878,6 +905,7 @@ function Modal({title, onClose, children}){
 
 /* ============================== Waitlist matching ============================== */
 function matchesImovel(entry, imovel){
+  if(situacaoImovel(imovel) === 'Vendido') return false;
   if(imovel.estado !== 'Vago') return false;
   if(entry.tipo && entry.tipo !== imovel.tipo) return false;
   if(entry.zona && !(imovel.morada||'').toLowerCase().includes(entry.zona.toLowerCase())) return false;
@@ -886,8 +914,23 @@ function matchesImovel(entry, imovel){
   return true;
 }
 
+// Proprietários "atuais" de um imóvel — exclui posições já encerradas (dataFim
+// preenchida) por uma transferência de fração. Uma linha sem dataInicio/dataFim
+// é sempre válida (dados anteriores a esta funcionalidade, ou posição em curso).
+function proprietariosAtuais(proprietarios, imovelId){
+  return proprietarios.filter(p=>p.imovelId===imovelId && !p.dataFim);
+}
+// Proprietários válidos numa data específica — usado para atribuir rendas e
+// despesas ao(s) proprietário(s) que efetivamente detinham a fração nesse dia,
+// mesmo que a propriedade tenha mudado de mãos entretanto.
+function proprietariosNaData(proprietarios, imovelId, dataISO){
+  return proprietarios.filter(p=>p.imovelId===imovelId
+    && (!p.dataInicio || p.dataInicio<=dataISO)
+    && (!p.dataFim || p.dataFim>=dataISO));
+}
+
 function percentByImovel(proprietarios, imovelId){
-  return proprietarios.filter(p=>p.imovelId===imovelId).reduce((s,p)=>s+Number(p.percentagem||0),0);
+  return proprietariosAtuais(proprietarios, imovelId).reduce((s,p)=>s+Number(p.percentagem||0),0);
 }
 
 /* ============================== App ============================== */
@@ -1362,12 +1405,15 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
                 <thead><tr><th>Imóvel</th><th>Tipo</th><th>Estado</th><th>A sua %</th></tr></thead>
                 <tbody>
                   {data.imoveis.map(im=>{
-                    const meu = data.proprietarios.find(p=>p.imovelId===im.id && (p.email||'').toLowerCase()===(userEmail||'').toLowerCase());
+                    // Prioriza a posição atual (sem dataFim); uma fração já vendida
+                    // não deve continuar a mostrar a antiga percentagem como se fosse atual.
+                    const meusRegistos = data.proprietarios.filter(p=>p.imovelId===im.id && (p.email||'').toLowerCase()===(userEmail||'').toLowerCase());
+                    const meu = meusRegistos.find(p=>!p.dataFim) || null;
                     return (
                       <tr key={im.id}>
                         <td style={{fontWeight:600}}>{im.nome}<div style={{color:'var(--gray)', fontSize:12}}>{im.morada}</div></td>
                         <td>{im.tipo}</td>
-                        <td>{estadoImovelTag(im.estado)}</td>
+                        <td>{estadoImovelTag(im.estado)} {situacaoImovelTag(im)}</td>
                         <td>{meu ? (Number(meu.percentagem||0)*100).toFixed(0)+'%' : '—'}</td>
                       </tr>
                     );
@@ -1404,10 +1450,13 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
 }
 
 function Dashboard({data, setView}){
-  const ocupados = data.imoveis.filter(i=>i.estado==='Ocupado').length;
-  const vagos = data.imoveis.filter(i=>i.estado==='Vago').length;
-  const total = data.imoveis.length;
-  const receita = data.imoveis.reduce((s,i)=>s+Number(i.renda||0),0);
+  // KPIs da carteira "ativa" — imóveis vendidos ficam de fora destas contagens,
+  // mas continuam visíveis e filtráveis no Relatório Financeiro e no Acerto de Contas.
+  const imoveisAtivos = data.imoveis.filter(i=>situacaoImovel(i)!=='Vendido');
+  const ocupados = imoveisAtivos.filter(i=>i.estado==='Ocupado').length;
+  const vagos = imoveisAtivos.filter(i=>i.estado==='Vago').length;
+  const total = imoveisAtivos.length;
+  const receita = imoveisAtivos.reduce((s,i)=>s+Number(i.renda||0),0);
   const receitaContratada = data.contratos
     .filter(c => { const est = estadoContrato(c); return est.label==='Ativo' || est.label==='A Expirar'; })
     .reduce((s,c) => s + rendaAtual(c.id, c.renda, data.atualizacoesRenda), 0);
@@ -1595,13 +1644,16 @@ function useFiltered(list, query, fields){
 /* ============================== Imóveis ============================== */
 function ImoveisView({data, addOrEdit, remove, modal, setModal, setView}){
   const [query, setQuery] = useState('');
-  const filtered = useFiltered(data.imoveis, query, ['nome','morada','tipo']);
+  const [mostrarVendidos, setMostrarVendidos] = useState(false);
+  const baseList = mostrarVendidos ? data.imoveis : data.imoveis.filter(im=>situacaoImovel(im)!=='Vendido');
+  const filtered = useFiltered(baseList, query, ['nome','morada','tipo']);
+  const vendidosCount = data.imoveis.filter(im=>situacaoImovel(im)==='Vendido').length;
   const esperaAtivos = data.listaEspera.filter(w=>w.estado==='Ativo');
   const [expanded, setExpanded] = useState(null);
 
-  const empty = {id:'', nome:'', morada:'', tipo:'Apartamento', area:'', quartos:'', estado:'Vago', renda:'', notas:''};
+  const empty = {id:'', nome:'', morada:'', tipo:'Apartamento', area:'', quartos:'', estado:'Vago', renda:'', notas:'', situacao:'Ativo', dataVenda:''};
   const anexosCount = (imovelId) => data.documentos.filter(d=>d.imovelId===imovelId && d.temAnexo).length;
-  const donosDoImovel = (imovelId) => data.proprietarios.filter(p=>p.imovelId===imovelId);
+  const donosDoImovel = (imovelId) => proprietariosAtuais(data.proprietarios, imovelId);
   const donosResumo = (imovelId) => {
     const donos = donosDoImovel(imovelId);
     if(donos.length===0) return null;
@@ -1613,6 +1665,12 @@ function ImoveisView({data, addOrEdit, remove, modal, setModal, setView}){
     <PageShell title="Imóveis" subtitle="A ficha de cada imóvel sob a sua gestão." onNew={()=>setModal({type:'imovel', item:{...empty, id:uid('IM')}})}>
       <div className="toolbar">
         <input className="search" placeholder="Procurar por nome, morada, tipo…" value={query} onChange={e=>setQuery(e.target.value)} />
+        {vendidosCount>0 && (
+          <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12.5, color:'var(--gray)', marginLeft:12}}>
+            <input type="checkbox" checked={mostrarVendidos} onChange={e=>setMostrarVendidos(e.target.checked)} />
+            Mostrar vendidos ({vendidosCount})
+          </label>
+        )}
       </div>
       <div className="table-wrap">
         <table>
@@ -1637,6 +1695,10 @@ function ImoveisView({data, addOrEdit, remove, modal, setModal, setView}){
                     </td>
                     <td>{im.tipo}</td>
                     <td>
+                      {situacaoImovelTag(im)}
+                      {situacaoImovel(im)==='Vendido' && im.dataVenda && (
+                        <div style={{fontSize:11, color:'var(--gray)', marginTop:2}}>em {fmtDate(im.dataVenda)}</div>
+                      )}
                       {estadoImovelTag(im.estado)}
                       {matches.length>0 && (
                         <div style={{marginTop:6}}>
@@ -1713,6 +1775,20 @@ function ImovelForm({item, proprietarios, onGerirProprietarios, onSave, onCancel
         <div className="field"><label>Nº Quartos</label><input type="number" value={f.quartos} onChange={e=>set('quartos',e.target.value)} /></div>
         <div className="field"><label>Renda (€)</label><input type="number" value={f.renda} onChange={e=>set('renda',e.target.value)} /></div>
 
+        <div className="field"><label>Situação</label>
+          <select value={f.situacao||'Ativo'} onChange={e=>set('situacao', e.target.value)}>
+            {SITUACOES_IMOVEL.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        {f.situacao==='Vendido' && (
+          <div className="field"><label>Data da venda</label><input type="date" value={f.dataVenda||''} onChange={e=>set('dataVenda',e.target.value)} /></div>
+        )}
+        {f.situacao==='Vendido' && (
+          <div className="field full" style={{fontSize:12, color:'var(--gray)', padding:'8px 10px', background:'var(--limestone)', borderRadius:7}}>
+            Um imóvel vendido deixa de aparecer nas listas ativas (nova contratação, correspondência com a lista de espera), mas todo o histórico — contratos, pagamentos, despesas e anexos — continua guardado e visível no Relatório Financeiro e no Acerto de Contas para os anos em que esteve ativo.
+          </div>
+        )}
+
         <div className="field full">
           <label>Proprietário(s)</label>
           {!jaExiste ? (
@@ -1751,16 +1827,55 @@ function ImovelForm({item, proprietarios, onGerirProprietarios, onSave, onCancel
 
 /* ============================== Proprietários (co-propriedade) ============================== */
 function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
-  const empty = {id:'', imovelId:'', nome:'', nif:'', email:'', percentagem:'', contacto:'', notas:''};
+  const empty = {id:'', imovelId:'', nome:'', nif:'', email:'', percentagem:'', contacto:'', notas:'', dataInicio:'', dataFim:''};
   const imovelInfo = (id) => data.imoveis.find(i=>i.id===id);
+  const [historicoAberto, setHistoricoAberto] = useState(null);
 
-  // Agrupar proprietários por imóvel para mostrar a verificação de soma == 100%
+  // Agrupar proprietários ATUAIS por imóvel para mostrar a verificação de soma == 100%.
+  // Posições encerradas (dataFim preenchida, por uma transferência de fração) ficam
+  // à parte, no histórico de cada imóvel — não contam para a soma nem aparecem aqui.
   const porImovel = data.imoveis.map(im => ({
     imovel: im,
-    donos: data.proprietarios.filter(p=>p.imovelId===im.id),
-  })).filter(g => g.donos.length>0);
+    donos: proprietariosAtuais(data.proprietarios, im.id),
+    historico: data.proprietarios.filter(p=>p.imovelId===im.id && p.dataFim).sort((a,b)=>(a.dataFim||'').localeCompare(b.dataFim||'')),
+  })).filter(g => g.donos.length>0 || g.historico.length>0);
 
-  const semProprietario = data.imoveis.filter(im => !data.proprietarios.some(p=>p.imovelId===im.id));
+  const semProprietario = data.imoveis.filter(im => proprietariosAtuais(data.proprietarios, im.id).length===0 && !data.proprietarios.some(p=>p.imovelId===im.id && p.dataFim));
+
+  const executarTransferencia = (sellerRow, formData) => {
+    const pctTransferir = Number(formData.percentagem||0)/100;
+    const dataT = formData.data || todayISO();
+    const sellerRemaining = Number(sellerRow.percentagem||0) - pctTransferir;
+
+    // Encerra a posição atual do vendedor à data da transferência.
+    addOrEdit('proprietarios', {...sellerRow, dataFim: dataT});
+    // Se ainda ficar com alguma percentagem, reabre uma nova posição para o vendedor.
+    if(sellerRemaining > 0.0009){
+      addOrEdit('proprietarios', {
+        ...sellerRow, id: uid('PR'), percentagem: sellerRemaining, dataInicio: dataT, dataFim: '',
+        notas: (sellerRow.notas ? sellerRow.notas + ' — ' : '') + 'Posição atualizada após transferir ' + Math.round(pctTransferir*100) + '% em ' + fmtDate(dataT),
+      });
+    }
+
+    if(formData.compradorExistenteId){
+      const buyerRow = data.proprietarios.find(p=>p.id===formData.compradorExistenteId);
+      if(buyerRow){
+        const buyerNovo = Number(buyerRow.percentagem||0) + pctTransferir;
+        addOrEdit('proprietarios', {...buyerRow, dataFim: dataT});
+        addOrEdit('proprietarios', {
+          ...buyerRow, id: uid('PR'), percentagem: buyerNovo, dataInicio: dataT, dataFim: '',
+          notas: (buyerRow.notas ? buyerRow.notas + ' — ' : '') + 'Adquiriu ' + Math.round(pctTransferir*100) + '% de ' + sellerRow.nome + ' em ' + fmtDate(dataT),
+        });
+      }
+    } else if(formData.novoNome) {
+      addOrEdit('proprietarios', {
+        id: uid('PR'), imovelId: sellerRow.imovelId, nome: formData.novoNome, nif: formData.novoNif||'',
+        email: formData.novoEmail||'', contacto: formData.novoContacto||'', percentagem: pctTransferir,
+        dataInicio: dataT, dataFim: '', notas: 'Adquiriu ' + Math.round(pctTransferir*100) + '% de ' + sellerRow.nome + ' em ' + fmtDate(dataT),
+      });
+    }
+    setModal(null);
+  };
 
   return (
     <PageShell
@@ -1768,53 +1883,84 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
       subtitle="Imóveis podem ter mais do que um proprietário. A renda líquida de cada um é calculada automaticamente a partir da sua percentagem."
       onNew={()=>setModal({type:'proprietario', item:{...empty, id:uid('PR')}})}
     >
-      {porImovel.map(({imovel, donos})=>{
+      {porImovel.map(({imovel, donos, historico})=>{
         const soma = donos.reduce((s,p)=>s+Number(p.percentagem||0),0);
-        const somaOk = Math.abs(soma-1) < 0.001;
+        const somaOk = donos.length===0 || Math.abs(soma-1) < 0.001;
         return (
           <div className="panel" key={imovel.id}>
             <h3>
               {imovel.nome}
+              {situacaoImovelTag(imovel)}
               <span className="muted">Renda do imóvel: {fmtEUR(imovel.renda)}</span>
             </h3>
-            <div className="table-wrap" style={{border:'none'}}>
-              <table>
-                <thead><tr>
-                  <th>Proprietário</th><th>NIF</th><th>Email</th><th>Contacto</th><th>% Propriedade</th><th>Renda Líquida (Quota)</th><th></th>
-                </tr></thead>
-                <tbody>
-                  {donos.map(p=>{
-                    const quota = Number(imovel.renda||0) * Number(p.percentagem||0);
-                    return (
+            {donos.length>0 && (
+              <div className="table-wrap" style={{border:'none'}}>
+                <table>
+                  <thead><tr>
+                    <th>Proprietário</th><th>NIF</th><th>Email</th><th>Contacto</th><th>% Propriedade</th><th>Renda Líquida (Quota)</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {donos.map(p=>{
+                      const quota = Number(imovel.renda||0) * Number(p.percentagem||0);
+                      return (
+                        <tr key={p.id}>
+                          <td style={{fontWeight:600}}>{p.nome}</td>
+                          <td>{p.nif}</td>
+                          <td>
+                            {p.email ? (
+                              <span>{p.email} <Tag kind="verdigris">acesso</Tag></span>
+                            ) : (
+                              <span style={{color:'var(--gray)', fontSize:12}}>sem email — sem acesso</span>
+                            )}
+                          </td>
+                          <td>{p.contacto}</td>
+                          <td>{(Number(p.percentagem||0)*100).toFixed(0)}%</td>
+                          <td style={{fontWeight:600, color:'var(--telha)'}}>{fmtEUR(quota)}</td>
+                          <td>
+                            <div className="row-actions">
+                              <button className="icon-btn" onClick={()=>setModal({type:'transferirFracao', item:p, outros: donos.filter(d=>d.id!==p.id)})}>Transferir fração</button>
+                              <button className="icon-btn" onClick={()=>setModal({type:'proprietario', item:p})}>Editar</button>
+                              <button className="icon-btn danger" onClick={()=>remove('proprietarios', p.id)}>Remover</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{marginTop:10, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+              {donos.length>0 && (
+                <React.Fragment>
+                  <span style={{fontSize:12.5, color:'var(--gray)'}}>Soma da propriedade atribuída:</span>
+                  <Tag kind={somaOk ? 'verdigris' : 'rust'}>{(soma*100).toFixed(0)}%{somaOk ? ' — correto' : ' — deveria ser 100%'}</Tag>
+                </React.Fragment>
+              )}
+              {historico.length>0 && (
+                <button className="btn btn-ghost btn-sm" onClick={()=>setHistoricoAberto(historicoAberto===imovel.id?null:imovel.id)}>
+                  {historicoAberto===imovel.id ? 'Esconder' : 'Ver'} histórico de propriedade ({historico.length})
+                </button>
+              )}
+            </div>
+            {historicoAberto===imovel.id && historico.length>0 && (
+              <div className="table-wrap" style={{border:'none', marginTop:8}}>
+                <table>
+                  <thead><tr><th>Proprietário</th><th>%</th><th>De</th><th>Até</th><th>Notas</th></tr></thead>
+                  <tbody>
+                    {historico.map(p=>(
                       <tr key={p.id}>
-                        <td style={{fontWeight:600}}>{p.nome}</td>
-                        <td>{p.nif}</td>
-                        <td>
-                          {p.email ? (
-                            <span>{p.email} <Tag kind="verdigris">acesso</Tag></span>
-                          ) : (
-                            <span style={{color:'var(--gray)', fontSize:12}}>sem email — sem acesso</span>
-                          )}
-                        </td>
-                        <td>{p.contacto}</td>
+                        <td>{p.nome}</td>
                         <td>{(Number(p.percentagem||0)*100).toFixed(0)}%</td>
-                        <td style={{fontWeight:600, color:'var(--telha)'}}>{fmtEUR(quota)}</td>
-                        <td>
-                          <div className="row-actions">
-                            <button className="icon-btn" onClick={()=>setModal({type:'proprietario', item:p})}>Editar</button>
-                            <button className="icon-btn danger" onClick={()=>remove('proprietarios', p.id)}>Remover</button>
-                          </div>
-                        </td>
+                        <td>{p.dataInicio ? fmtDate(p.dataInicio) : '—'}</td>
+                        <td>{fmtDate(p.dataFim)}</td>
+                        <td style={{color:'var(--gray)', fontSize:12}}>{p.notas}</td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div style={{marginTop:10, display:'flex', alignItems:'center', gap:8}}>
-              <span style={{fontSize:12.5, color:'var(--gray)'}}>Soma da propriedade atribuída:</span>
-              <Tag kind={somaOk ? 'verdigris' : 'rust'}>{(soma*100).toFixed(0)}%{somaOk ? ' — correto' : ' — deveria ser 100%'}</Tag>
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         );
       })}
@@ -1837,6 +1983,12 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
       {modal && modal.type==='proprietario' && (
         <Modal title={data.proprietarios.some(x=>x.id===modal.item.id) ? 'Editar proprietário' : 'Novo proprietário'} onClose={()=>setModal(null)}>
           <ProprietarioForm item={modal.item} imoveis={data.imoveis} onSave={(it)=>{addOrEdit('proprietarios',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        </Modal>
+      )}
+
+      {modal && modal.type==='transferirFracao' && (
+        <Modal title={'Transferir fração — ' + modal.item.nome} onClose={()=>setModal(null)}>
+          <TransferirFracaoForm sellerRow={modal.item} outros={modal.outros} onSave={(formData)=>executarTransferencia(modal.item, formData)} onCancel={()=>setModal(null)} />
         </Modal>
       )}
     </PageShell>
@@ -1882,11 +2034,61 @@ function ProprietarioForm({item, imoveis, onSave, onCancel}){
             </div>
           </div>
         )}
+        <div className="field"><label>Proprietário desde (opcional)</label><input type="date" value={f.dataInicio||''} onChange={e=>set('dataInicio',e.target.value)} /></div>
+        <div className="field"><label>Proprietário até (deixe em branco se atual)</label><input type="date" value={f.dataFim||''} onChange={e=>set('dataFim',e.target.value)} /></div>
         <div className="field full"><label>Notas</label><textarea value={f.notas} onChange={e=>set('notas',e.target.value)} /></div>
       </div>
       <div className="modal-actions">
         <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
         <button className="btn btn-primary" onClick={handleSave}>Guardar</button>
+      </div>
+    </React.Fragment>
+  );
+}
+
+function TransferirFracaoForm({sellerRow, outros, onSave, onCancel}){
+  const [percentagem, setPercentagem] = useState('');
+  const [dataTransferencia, setDataTransferencia] = useState(todayISO());
+  const [compradorExistenteId, setCompradorExistenteId] = useState('');
+  const [novoNome, setNovoNome] = useState('');
+  const [novoNif, setNovoNif] = useState('');
+  const [novoEmail, setNovoEmail] = useState('');
+  const [novoContacto, setNovoContacto] = useState('');
+
+  const pctAtual = Math.round(Number(sellerRow.percentagem||0)*100);
+  const pctNum = Number(percentagem||0);
+  const valido = pctNum>0 && pctNum<=pctAtual && dataTransferencia && (compradorExistenteId || novoNome.trim());
+
+  return (
+    <React.Fragment>
+      <div style={{fontSize:12.5, color:'var(--gray)', marginBottom:12}}>
+        {sellerRow.nome} detém atualmente <strong>{pctAtual}%</strong> deste imóvel. Esta transferência fecha essa posição na data indicada e regista a(s) nova(s) posição(ões) a partir daí — sem apagar o histórico.
+      </div>
+      <div className="form-grid">
+        <div className="field"><label>% a transferir</label>
+          <input type="number" min="1" max={pctAtual} value={percentagem} onChange={e=>setPercentagem(e.target.value)} placeholder={'até ' + pctAtual} />
+        </div>
+        <div className="field"><label>Data da transferência</label><input type="date" value={dataTransferencia} onChange={e=>setDataTransferencia(e.target.value)} /></div>
+
+        <div className="field full"><label>Comprador</label>
+          <select value={compradorExistenteId} onChange={e=>{ setCompradorExistenteId(e.target.value); if(e.target.value) setNovoNome(''); }}>
+            <option value="">— Novo proprietário —</option>
+            {outros.map(o=><option key={o.id} value={o.id}>{o.nome} (atualmente {(Number(o.percentagem||0)*100).toFixed(0)}%)</option>)}
+          </select>
+        </div>
+
+        {!compradorExistenteId && (
+          <React.Fragment>
+            <div className="field"><label>Nome do novo proprietário</label><input value={novoNome} onChange={e=>setNovoNome(e.target.value)} /></div>
+            <div className="field"><label>NIF</label><input value={novoNif} onChange={e=>setNovoNif(e.target.value)} /></div>
+            <div className="field"><label>Contacto</label><input value={novoContacto} onChange={e=>setNovoContacto(e.target.value)} /></div>
+            <div className="field"><label>Email (opcional — dá acesso)</label><input type="email" value={novoEmail} onChange={e=>setNovoEmail(e.target.value)} /></div>
+          </React.Fragment>
+        )}
+      </div>
+      <div className="modal-actions">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" disabled={!valido} onClick={()=>onSave({percentagem, data: dataTransferencia, compradorExistenteId, novoNome, novoNif, novoEmail, novoContacto})}>Transferir</button>
       </div>
     </React.Fragment>
   );
@@ -2312,13 +2514,16 @@ function ContratoForm({item, imoveis, inquilinos, onSave, onCancel}){
   const handleSubmit = () => {
     onSave({...f, percentagemRetencao: (f.sujeitoRetencao && f.percentagemRetencao!=='') ? Number(f.percentagemRetencao)/100 : 0});
   };
+  // Imóveis vendidos não aparecem para novos contratos — mas o imóvel já
+  // associado a este contrato (se for o caso) mantém-se disponível ao editar.
+  const imoveisSelecionaveis = imoveis.filter(im => situacaoImovel(im)!=='Vendido' || im.id===item.imovelId);
   return (
     <React.Fragment>
       <div className="form-grid">
         <div className="field"><label>Imóvel</label>
           <select value={f.imovelId} onChange={e=>set('imovelId',e.target.value)}>
             <option value="">—</option>
-            {imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
+            {imoveisSelecionaveis.map(im=><option key={im.id} value={im.id}>{im.nome}{situacaoImovel(im)==='Vendido' ? ' (vendido)' : ''}</option>)}
           </select>
         </div>
         <div className="field"><label>Inquilino</label>
@@ -2571,7 +2776,7 @@ function FiadoresView({data, addOrEdit, remove, modal, setModal}){
     <PageShell title="Fiadores" subtitle="Fiadores associados aos contratos, com documentos anexados." onNew={()=>setModal({type:'fiador', item:{...empty, id:uid('FD')}})}>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Nome</th><th>Contacto</th><th>Contrato</th><th>Documentos</th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th>Contacto</th><th>Contrato</th><th>Estado</th><th>Documentos</th><th></th></tr></thead>
           <tbody>
             {data.fiadores.map(fd=>(
               <React.Fragment key={fd.id}>
@@ -2579,6 +2784,7 @@ function FiadoresView({data, addOrEdit, remove, modal, setModal}){
                   <td style={{fontWeight:600}}>{fd.nome}</td>
                   <td>{fd.telefone}<div style={{color:'var(--gray)', fontSize:12}}>{fd.email}</div></td>
                   <td>{contratoLabel(fd.contratoId)}</td>
+                  <td>{estadoFiadorTag(fiadorAtivo(fd, data.contratos))}</td>
                   <td>
                     <button className="icon-btn" onClick={()=>setExpanded(expanded===fd.id ? null : fd.id)}>
                       {(fd.documentos||[]).length} documento{(fd.documentos||[]).length!==1?'s':''}
@@ -2592,7 +2798,7 @@ function FiadoresView({data, addOrEdit, remove, modal, setModal}){
                   </td>
                 </tr>
                 {expanded===fd.id && (
-                  <tr><td colSpan="5" style={{background:'var(--limestone)', padding:0}}>
+                  <tr><td colSpan="6" style={{background:'var(--limestone)', padding:0}}>
                     <div style={{padding:'14px 18px'}}>
                       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
                         <div style={{fontWeight:700, fontSize:13}}>Documentos do fiador</div>
@@ -2616,7 +2822,7 @@ function FiadoresView({data, addOrEdit, remove, modal, setModal}){
                 )}
               </React.Fragment>
             ))}
-            {data.fiadores.length===0 && <tr><td colSpan="5" className="empty">Nenhum fiador registado.</td></tr>}
+            {data.fiadores.length===0 && <tr><td colSpan="6" className="empty">Nenhum fiador registado.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -2732,7 +2938,7 @@ function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietari
 
   const contrato = contratos.find(c=>c.id===f.contratoId);
   const imovel = contrato ? imoveis.find(i=>i.id===contrato.imovelId) : null;
-  const donos = imovel ? proprietarios.filter(p=>p.imovelId===imovel.id) : [];
+  const donos = imovel ? proprietariosAtuais(proprietarios, imovel.id) : [];
 
   const onContratoChange = (contratoId) => {
     set('contratoId', contratoId);
@@ -3758,51 +3964,72 @@ function DocForm({item, imoveis, onSave, onCancel}){
 }
 
 /* ============================== Relatório Financeiro ============================== */
+// Identifica um proprietário de forma estável ao longo do tempo, mesmo que a
+// mesma pessoa tenha várias linhas (posições sucessivas por transferência de fração).
+function donoKey(p){ return p.nif ? ('nif:'+p.nif) : ('nome:'+(p.nome||'')); }
+
+// Constrói o Relatório Financeiro atribuindo cada renda e cada despesa ao(s)
+// proprietário(s) que detinham a percentagem do imóvel NA DATA dessa transação
+// (data.proprietarios + historicoPropriedade via dataInicio/dataFim), em vez de
+// aplicar a percentagem atual a todo o ano — assim uma transferência de fração
+// a meio do ano, ou um imóvel vendido durante o ano fiscal, não distorce anos
+// em que a titularidade era outra.
 function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
-  const linhas = [];
+  const porDono = {}; // imovelId+'|'+donoKey -> linha acumulada
+
+  const atribuir = (im, dataISO, campo, valor) => {
+    if(!valor) return;
+    let donosNaData = proprietariosNaData(data.proprietarios, im.id, dataISO);
+    if(donosNaData.length===0) donosNaData = data.proprietarios.filter(p=>p.imovelId===im.id);
+    if(donosNaData.length===0) donosNaData = [{nome: im.proprietario || '—', percentagem: 1, email:'', nif:''}];
+
+    donosNaData.forEach(dono => {
+      const pct = Number(dono.percentagem||1);
+      const key = im.id + '|' + donoKey(dono);
+      if(!porDono[key]){
+        porDono[key] = {
+          imovelId: im.id, imovelNome: im.nome, proprietarioNome: dono.nome, email: dono.email||'', percentagem: pct,
+          rendaBruta:0, irsRetido:0, valorLiquido:0, despesasDedutiveis:0, despesasNaoDedutiveis:0,
+          resultado:0, resultadoReal:0, valorEmFalta:0,
+        };
+      }
+      porDono[key].percentagem = pct; // mostra a percentagem mais recente conhecida
+      porDono[key][campo] += valor*pct;
+    });
+  };
+
   data.imoveis.forEach(im => {
     if(filtroImovelId!=='todos' && im.id!==filtroImovelId) return;
 
     const contratosDoImovel = data.contratos.filter(c=>c.imovelId===im.id);
-    let rendaBruta = 0, irsRetido = 0, valorEmFalta = 0;
     data.pagamentos.forEach(p => {
       if(p.valorPago==='' || p.valorPago==null) return; // só rendas efetivamente recebidas
       if(!p.mesRef || !p.mesRef.startsWith(String(anoFiscal))) return;
       const contrato = contratosDoImovel.find(c=>c.id===p.contratoId);
       if(!contrato) return;
       const calc = calcPagamentoValores(p, contrato);
-      rendaBruta += calc.bruto;
-      irsRetido += calc.retencao;
-      valorEmFalta += calc.falta;
+      const dataISO = p.dataPagamento || (p.mesRef + '-01');
+      atribuir(im, dataISO, 'rendaBruta', calc.bruto);
+      atribuir(im, dataISO, 'irsRetido', calc.retencao);
+      atribuir(im, dataISO, 'valorEmFalta', calc.falta);
     });
-    const valorLiquido = rendaBruta - irsRetido;
 
-    const despesasDedutiveis = data.despesas
-      .filter(d => d.imovelId===im.id && d.dedutivel && Number(d.anoFiscal)===Number(anoFiscal))
-      .reduce((s,d)=>s+Number(d.valor||0), 0);
-
-    const despesasNaoDedutiveis = data.despesas
-      .filter(d => d.imovelId===im.id && !d.dedutivel && Number(d.anoFiscal)===Number(anoFiscal))
-      .reduce((s,d)=>s+Number(d.valor||0), 0);
-
-    const resultado = valorLiquido - despesasDedutiveis; // resultado fiscal (base do IRS Categoria F)
-    const resultadoReal = resultado - despesasNaoDedutiveis; // resultado real, após todas as despesas
-
-    let donos = data.proprietarios.filter(p=>p.imovelId===im.id);
-    if(donos.length===0) donos = [{nome: im.proprietario || '—', percentagem: 1}];
-
-    donos.forEach(dono => {
-      if(filtroProprietario!=='todos' && dono.nome!==filtroProprietario) return;
-      const pct = Number(dono.percentagem||1);
-      linhas.push({
-        imovelId: im.id, imovelNome: im.nome, proprietarioNome: dono.nome, email: dono.email||'', percentagem: pct,
-        rendaBruta: rendaBruta*pct, irsRetido: irsRetido*pct, valorLiquido: valorLiquido*pct,
-        despesasDedutiveis: despesasDedutiveis*pct, despesasNaoDedutiveis: despesasNaoDedutiveis*pct,
-        resultado: resultado*pct, resultadoReal: resultadoReal*pct, valorEmFalta: valorEmFalta*pct,
+    data.despesas
+      .filter(d => d.imovelId===im.id && Number(d.anoFiscal)===Number(anoFiscal))
+      .forEach(d => {
+        const dataISO = d.data || (anoFiscal + '-01-01');
+        atribuir(im, dataISO, d.dedutivel ? 'despesasDedutiveis' : 'despesasNaoDedutiveis', Number(d.valor||0));
       });
-    });
   });
-  return linhas;
+
+  return Object.values(porDono)
+    .map(l => {
+      l.valorLiquido = l.rendaBruta - l.irsRetido;
+      l.resultado = l.valorLiquido - l.despesasDedutiveis; // resultado fiscal (base do IRS Categoria F)
+      l.resultadoReal = l.resultado - l.despesasNaoDedutiveis; // resultado real, após todas as despesas
+      return l;
+    })
+    .filter(l => filtroProprietario==='todos' || l.proprietarioNome===filtroProprietario);
 }
 
 // Calcula, para um imóvel e um período livre (datas), quanto cada
@@ -3828,29 +4055,52 @@ function buildAcertoContas(data, imovelId, dataInicio, dataFim){
   const despesasTotal = despesasDoPeriodo.reduce((s,d)=>s+Number(d.valor||0),0)
     + manutencoesDoPeriodo.reduce((s,m)=>s+Number(m.custo||0),0);
 
-  let donos = data.proprietarios.filter(p=>p.imovelId===imovelId);
-  if(donos.length===0) donos = [{nome: im.proprietario || '—', percentagem: 1, email:''}];
+  const todosProprietarios = data.proprietarios.filter(p=>p.imovelId===imovelId);
+
+  // Regista todos os proprietários que tiveram alguma posição relevante no período
+  // (mesmo que já a tenham encerrado), para que continuem a aparecer no acerto.
+  const donosNoPeriodo = new Map(); // donoKey -> {nome, nif, email, percentagemAtual}
+  const registarDono = (p) => {
+    const key = donoKey(p);
+    if(!donosNoPeriodo.has(key)) donosNoPeriodo.set(key, {nome:p.nome, nif:p.nif||'', email:p.email||'', percentagemAtual:Number(p.percentagem||1)});
+  };
+  if(todosProprietarios.length===0) registarDono({nome: im.proprietario || '—', percentagem:1, email:'', nif:''});
+  else todosProprietarios.forEach(registarDono);
+
+  // Atribui cada despesa/manutenção aos proprietários válidos NA DATA em que ocorreu —
+  // assim uma transferência de fração a meio do período reparte corretamente a quota.
+  const quotaPorDono = {};
+  const atribuirDespesa = (dataISO, valor) => {
+    let donosNaData = proprietariosNaData(data.proprietarios, imovelId, dataISO);
+    if(donosNaData.length===0) donosNaData = todosProprietarios.length ? todosProprietarios : [{nome: im.proprietario || '—', percentagem:1, email:'', nif:''}];
+    donosNaData.forEach(p => {
+      registarDono(p);
+      const key = donoKey(p);
+      quotaPorDono[key] = (quotaPorDono[key]||0) + valor*Number(p.percentagem||1);
+    });
+  };
 
   const pagamentosPorPessoa = {}; // nome -> total que pagou do próprio bolso no período
   despesasDoPeriodo.forEach(d => {
+    atribuirDespesa(d.data, Number(d.valor||0));
     const nome = d.pagoPorNome || '';
-    if(!nome) return;
-    pagamentosPorPessoa[nome] = (pagamentosPorPessoa[nome]||0) + Number(d.valor||0);
+    if(nome) pagamentosPorPessoa[nome] = (pagamentosPorPessoa[nome]||0) + Number(d.valor||0);
   });
   manutencoesDoPeriodo.forEach(m => {
+    atribuirDespesa(m.dataPedido, Number(m.custo||0));
     const nome = m.pagoPorNome || '';
-    if(!nome) return;
-    pagamentosPorPessoa[nome] = (pagamentosPorPessoa[nome]||0) + Number(m.custo||0);
+    if(nome) pagamentosPorPessoa[nome] = (pagamentosPorPessoa[nome]||0) + Number(m.custo||0);
   });
 
-  return donos.map(dono => {
-    const pct = Number(dono.percentagem||1);
-    const quotaDespesa = despesasTotal * pct; // a parte que lhe cabia pagar do total de despesas
+  const acertosDoPeriodo = data.acertos.filter(a => a.imovelId===imovelId && dentroPeriodo(a.data));
+
+  return Array.from(donosNoPeriodo.values()).map(dono => {
+    const key = donoKey(dono);
+    const quotaDespesa = quotaPorDono[key] || 0; // a parte que lhe cabia pagar, proporcional ao período em que foi dono
     const despesasPagas = pagamentosPorPessoa[dono.nome] || 0;
     const saldoBase = despesasPagas - quotaDespesa; // positivo = pagou a mais, tem a receber; negativo = deve
     const reembolsoOutros = Math.max(0, saldoBase);
 
-    const acertosDoPeriodo = data.acertos.filter(a => a.imovelId===imovelId && dentroPeriodo(a.data));
     const jaRecebeu = acertosDoPeriodo
       .filter(a => (a.paraNome || a.proprietarioNome) === dono.nome)
       .reduce((s,a)=>s+Number(a.valor||0), 0);
@@ -3861,7 +4111,7 @@ function buildAcertoContas(data, imovelId, dataInicio, dataFim){
 
     const saldo = saldoBase - jaTransferido;
     return {
-      imovelId, imovelNome: im.nome, proprietarioNome: dono.nome, email: dono.email||'', percentagem: pct,
+      imovelId, imovelNome: im.nome, proprietarioNome: dono.nome, email: dono.email||'', percentagem: dono.percentagemAtual,
       despesasTotal, quotaDespesa, despesasPagas, reembolsoOutros, jaTransferido, saldo,
     };
   });
