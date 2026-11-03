@@ -549,65 +549,6 @@ const PRIORIDADES = ['Alta','Média','Baixa'];
 const ESTADOS_MANUT = ['Pendente','Em Curso','Concluído'];
 const ESTADOS_WAITLIST = ['Ativo','Contactado','Convertido','Inativo'];
 
-/* ============================== Seed data ============================== */
-function seedData(){
-  const imoveis = [
-    {id:'IM001', nome:'Apartamento Alvalade T2', morada:'Av. Rio de Janeiro 45, Lisboa', tipo:'Apartamento', area:75, quartos:2, estado:'Ocupado', renda:950, notas:'Renovado em 2023', situacao:'Ativo', dataVenda:''},
-    {id:'IM002', nome:'Loja Baixa Chiado', morada:'Rua Garrett 12, Lisboa', tipo:'Loja', area:40, quartos:0, estado:'Vago', renda:1400, notas:'', situacao:'Ativo', dataVenda:''},
-    {id:'IM003', nome:'Moradia Sintra V3', morada:'Rua das Flores 8, Sintra', tipo:'Moradia', area:180, quartos:3, estado:'Vago', renda:1600, notas:'Jardim privado', situacao:'Ativo', dataVenda:''},
-  ];
-  const inquilinos = [
-    {id:'INQ001', nome:'Maria Ferreira', nif:'123456789', telefone:'912345678', email:'maria.ferreira@email.com', imovelId:'IM001', dataInicio:'2024-01-01', notas:''},
-  ];
-  const contratos = [
-    {id:'CT001', imovelId:'IM001', inquilinoId:'INQ001', dataInicio:'2024-01-01', dataFim:'2027-12-31', renda:950, caucao:950, prazoAvisoRescisao:120, renovavel:true, periodoRenovacaoMeses:12, sujeitoRetencao:true, percentagemRetencao:0.25, rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', notas:''},
-  ];
-  const atualizacoesRenda = [
-    {id:'AR001', contratoId:'CT001', data:'2025-01-01', valorAnterior:900, valorNovo:950, motivo:'Atualização anual (coeficiente de inflação)'},
-  ];
-  const renovacoes = [
-    {id:'RN001', contratoId:'CT001', data:'2025-12-15', dataFimAnterior:'2025-12-31', novaDataFim:'2027-12-31', periodoMeses:24, notas:'Renovação automática por não ter havido aviso de rescisão'},
-  ];
-  const pagamentos = [
-    {id:'PG001', contratoId:'CT001', mesRef:'2026-08', valorDevido:950, dataVencimento:'2026-08-08', dataPagamento:'2026-08-05', valorPago:950, notas:''},
-    {id:'PG002', contratoId:'CT001', mesRef:'2026-09', valorDevido:950, dataVencimento:'2026-09-08', dataPagamento:'', valorPago:'', notas:''},
-  ];
-  const manutencoes = [
-    {id:'MN001', imovelId:'IM003', dataPedido:'2026-08-20', descricao:'Reparação de canalização na cozinha', prioridade:'Alta', estado:'Em Curso', custo:120, fornecedor:'Canalizações Rápidas Lda', temFatura:false, faturaNome:'', faturaTipo:'', despesaId:'', registadoPorNome:'Administrador', registadoPorEmail:'', pagoPorNome:'Ana Costa'},
-  ];
-  const tarefas = [
-    {id:'TF001', titulo:'Renovar seguro multirriscos — IM001', dataLimite:'2026-09-15', concluida:false, notas:''},
-    {id:'TF002', titulo:'Confirmar manutenção da caldeira — IM003', dataLimite:'2026-09-05', concluida:false, notas:''},
-  ];
-  const documentos = [
-    {id:'DC001', nome:'Caderneta Predial — IM001', categoria:'Escritura/Registo', imovelId:'IM001', data:'2024-01-01', notas:''},
-  ];
-  const listaEspera = [
-    {id:'LE001', nome:'Sofia Martins', telefone:'913111222', email:'sofia.martins@email.com', tipo:'Loja', zona:'Chiado', rendaMax:1500, quartosMin:0, dataRegisto:'2026-08-10', estado:'Ativo', notas:'Procura loja para ateliê de costura'},
-    {id:'LE002', nome:'Diogo Pereira', telefone:'914222333', email:'diogo.pereira@email.com', tipo:'Moradia', zona:'Sintra', rendaMax:1700, quartosMin:3, dataRegisto:'2026-08-18', estado:'Ativo', notas:''},
-    {id:'LE003', nome:'Carla e Nuno Antunes', telefone:'915333444', email:'carla.antunes@email.com', tipo:'Apartamento', zona:'Lisboa', rendaMax:1000, quartosMin:2, dataRegisto:'2026-07-30', estado:'Contactado', notas:'Já visitaram IM001 antes de ficar ocupado'},
-  ];
-  const proprietarios = [
-    {id:'PR001', imovelId:'IM001', nome:'João Silva', nif:'111222333', email:'', percentagem:1, contacto:'912000111', notas:'Proprietário único', dataInicio:'', dataFim:''},
-    {id:'PR002', imovelId:'IM002', nome:'João Silva', nif:'111222333', email:'', percentagem:1, contacto:'912000111', notas:'Proprietário único', dataInicio:'', dataFim:''},
-    {id:'PR003', imovelId:'IM003', nome:'Ana Costa', nif:'222333444', email:'ana.costa@email.com', percentagem:0.6, contacto:'913000222', notas:'Co-proprietária', dataInicio:'', dataFim:''},
-    {id:'PR004', imovelId:'IM003', nome:'Rui Costa', nif:'333444555', email:'rui.costa@email.com', percentagem:0.4, contacto:'914000333', notas:'Co-proprietário (irmão)', dataInicio:'', dataFim:''},
-  ];
-  const vistorias = [
-    {id:'VT001', imovelId:'IM001', tipo:'Entrada', data:'2024-01-01', descricao:'Vistoria de entrada com a inquilina Maria Ferreira. Imóvel em bom estado geral.', notas:'', fotos:[]},
-  ];
-  const despesas = [
-    {id:'DP001', imovelId:'IM003', data:'2026-08-22', anoFiscal:2026, categoria:'Obras', descricao:'Reparação de canalização na cozinha', valor:120, dedutivel:true, notas:'Relacionado com o pedido de manutenção MN001', temComprovativo:false, comprovativoNome:'', comprovativoTipo:'', registadoPorNome:'Administrador', registadoPorEmail:'', pagoPorNome:'Ana Costa'},
-  ];
-  const fiadores = [
-    {id:'FD001', contratoId:'CT001', nome:'Carlos Ferreira', nif:'234567891', telefone:'915123456', email:'carlos.ferreira@email.com', morada:'Rua Nova 22, Lisboa', notas:'Pai da inquilina', documentos:[]},
-  ];
-  const acertos = [
-    {id:'AC001', imovelId:'IM003', deNome:'Rui Costa', paraNome:'Ana Costa', data:'2026-08-25', valor:48, notas:'Transferência bancária referente a agosto', registadoPorNome:'Administrador'},
-  ];
-  return {imoveis, inquilinos, contratos, pagamentos, manutencoes, tarefas, documentos, listaEspera, proprietarios, atualizacoesRenda, vistorias, despesas, renovacoes, fiadores, acertos};
-}
-
 /* ============================== Configuração do Supabase ============================== */
 // Substitua estes dois valores pelos do seu projeto Supabase:
 // Project Settings → API → Project URL / anon public key
@@ -788,10 +729,12 @@ function useAppData(userId, scopeUserId){
   const [data, setData] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [syncError, setSyncError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if(!userId){ setData(null); setLoaded(false); return; }
     setLoaded(false);
+    setSyncError('');
     (async () => {
       try{
         const keys = Object.keys(TABLE_MAP);
@@ -806,15 +749,20 @@ function useAppData(userId, scopeUserId){
         results.forEach(([key, arr]) => { assembled[key] = arr; });
         setData(assembled);
       } catch(e){
-        setSyncError('Não foi possível carregar os dados (' + ((e&&e.message)||'erro desconhecido') + ').');
-        setData(seedData()); // fallback local, apenas nesta sessão — não é guardado
+        // Sem dados de substituição: em caso de falha, "data" fica a null e o
+        // ecrã de erro (DataSyncErrorScreen) assume o controlo do ecrã — nunca
+        // se mostra a app com dados fictícios.
+        setSyncError((e && e.message) || 'Erro desconhecido ao contactar o Supabase.');
+        setData(null);
       } finally {
         setLoaded(true);
       }
     })();
-  }, [userId, scopeUserId]);
+  }, [userId, scopeUserId, reloadKey]);
 
-  return [data, setData, loaded, syncError];
+  const retry = () => setReloadKey(k => k + 1);
+
+  return [data, setData, loaded, syncError, retry];
 }
 
 async function persistUpsert(key, item, userId){
@@ -1075,6 +1023,58 @@ function ConfigNeededScreen(){
   );
 }
 
+// Mostrado em vez da app sempre que a sincronização com o Supabase falha.
+// Importante: NUNCA mostra dados de substituição (seed/fictícios) — se os
+// dados reais não puderem ser carregados, o utilizador vê este ecrã e sabe
+// que está a ver um erro, não informação desatualizada ou inventada.
+function DataSyncErrorScreen({message, onRetry, onSignOut}){
+  const [retrying, setRetrying] = useState(false);
+  const causas = [
+    {titulo:'Sessão expirada ou sem permissões', texto:'O seu login pode ter expirado, ou a conta não tem permissão para aceder a estes dados (políticas de segurança / RLS no Supabase).'},
+    {titulo:'Projeto Supabase em pausa ou indisponível', texto:'Projetos no plano gratuito do Supabase pausam automaticamente após um período de inatividade. Se for esse o caso, reative o projeto na consola do Supabase e tente novamente.'},
+    {titulo:'Falha de ligação à internet', texto:'Verifique a sua ligação à rede. Se estiver a usar VPN, firewall ou rede empresarial, esta pode estar a bloquear o acesso ao Supabase.'},
+    {titulo:'Base de dados ainda não configurada', texto:'Se esta é uma instalação nova, pode ser necessário correr o ficheiro supabase-schema.sql no SQL Editor do Supabase antes de haver tabelas para ler.'},
+    {titulo:'Erro temporário ou desconhecido', texto:'Pode ter sido uma falha momentânea do lado do Supabase. Tentar novamente dentro de alguns segundos costuma resolver este caso.'},
+  ];
+  return (
+    <div className="auth-screen">
+      <div className="auth-card" style={{maxWidth:560}}>
+        <div className="brand-word" style={{color:'var(--ink)', marginBottom:10}}>Predial</div>
+        <h2 style={{marginTop:0, color:'var(--rust)'}}>Não foi possível carregar os seus dados</h2>
+        <p style={{color:'var(--charcoal)', fontSize:13.5, lineHeight:1.6}}>
+          Por segurança, a app não mostra dados fictícios ou desatualizados quando a sincronização falha.
+          Possíveis causas:
+        </p>
+        <ul style={{color:'var(--charcoal)', fontSize:13, lineHeight:1.6, paddingLeft:20, marginTop:0}}>
+          {causas.map((c,i) => (
+            <li key={i} style={{marginBottom:8}}><strong>{c.titulo}.</strong> {c.texto}</li>
+          ))}
+        </ul>
+        {message && (
+          <p style={{color:'var(--gray)', fontSize:12, lineHeight:1.5, background:'rgba(0,0,0,0.04)', padding:'8px 10px', borderRadius:6, wordBreak:'break-word'}}>
+            Detalhe técnico: {message}
+          </p>
+        )}
+        <div style={{display:'flex', gap:10, marginTop:14, flexWrap:'wrap'}}>
+          {onRetry && (
+            <button
+              className="btn btn-primary"
+              disabled={retrying}
+              onClick={() => { setRetrying(true); onRetry(); setTimeout(()=>setRetrying(false), 1500); }}
+            >
+              {retrying ? 'A tentar…' : 'Tentar novamente'}
+            </button>
+          )}
+          {onSignOut && (
+            <button className="btn btn-ghost" onClick={onSignOut}>Terminar sessão</button>
+          )}
+        </div>
+        <p style={{color:'var(--gray)', fontSize:12, marginTop:14}}>Se o problema persistir, abra a consola do navegador (tecla F12 → separador "Console") para mais detalhes, ou contacte o administrador do sistema.</p>
+      </div>
+    </div>
+  );
+}
+
 function LoginScreen({authError, onSignUp, onSignIn, logoutPorInatividade}){
   const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
   const [email, setEmail] = useState('');
@@ -1132,7 +1132,7 @@ function LoginScreen({authError, onSignUp, onSignIn, logoutPorInatividade}){
 }
 
 function MainApp({userId, userEmail, onSignOut, proprietarioDisponivel, onSwitchToProprietario}){
-  const [data, setData, loaded, syncError] = useAppData(userId, userId);
+  const [data, setData, loaded, syncError, retry] = useAppData(userId, userId);
   const [view, setView] = useState('dashboard');
   const [modal, setModal] = useState(null); // {type, item}
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1166,8 +1166,11 @@ function MainApp({userId, userEmail, onSignOut, proprietarioDisponivel, onSwitch
     });
   }, [loaded, data]);
 
-  if(!loaded || !data){
+  if(!loaded){
     return <div style={{padding:'60px', fontFamily:'IBM Plex Sans, sans-serif', color:'#7C7A72'}}>A carregar o Predial…</div>;
+  }
+  if(!data){
+    return <DataSyncErrorScreen message={syncError} onRetry={retry} onSignOut={onSignOut} />;
   }
 
   const update = (key, fn) => setData(d => ({...d, [key]: fn(d[key])}));
@@ -1241,7 +1244,6 @@ function MainApp({userId, userEmail, onSignOut, proprietarioDisponivel, onSwitch
           ))}
         </nav>
         <div className="sidebar-foot">
-          {syncError ? <div style={{color:'#F3C7BC', marginBottom:8}}>⚠ {syncError}</div> : null}
           <div style={{marginBottom:8, wordBreak:'break-all'}}>{userEmail}</div>
           {proprietarioDisponivel && (
             <button className="btn btn-ghost btn-sm" style={{color:'#EDEFF2', borderColor:'rgba(255,255,255,0.25)', width:'100%', marginBottom:8}} onClick={onSwitchToProprietario}>
@@ -1276,14 +1278,17 @@ function MainApp({userId, userEmail, onSignOut, proprietarioDisponivel, onSwitch
 /* ============================== Dashboard ============================== */
 /* ============================== Painel de Proprietário (só leitura + registo de despesas/manutenção) ============================== */
 function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, onSwitchToAdmin}){
-  const [data, setData, loaded, syncError] = useAppData(userId, ownerUserId);
+  const [data, setData, loaded, syncError, retry] = useAppData(userId, ownerUserId);
   const [view, setView] = useState('resumo');
   const [modal, setModal] = useState(null);
   const [anoFiscal, setAnoFiscal] = useState(String(new Date().getFullYear()));
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  if(!loaded || !data){
+  if(!loaded){
     return <div style={{padding:'60px', fontFamily:'IBM Plex Sans, sans-serif', color:'#7C7A72'}}>A carregar os seus imóveis…</div>;
+  }
+  if(!data){
+    return <DataSyncErrorScreen message={syncError} onRetry={retry} onSignOut={onSignOut} />;
   }
 
   const update = (key, fn) => setData(d => ({...d, [key]: fn(d[key])}));
@@ -1340,7 +1345,6 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
           ))}
         </nav>
         <div className="sidebar-foot">
-          {syncError ? <div style={{color:'#F3C7BC', marginBottom:8}}>⚠ {syncError}</div> : null}
           <div style={{marginBottom:8, wordBreak:'break-all'}}>{meuNome || userEmail}</div>
           {onSwitchToAdmin && (
             <button className="btn btn-ghost btn-sm" style={{color:'#EDEFF2', borderColor:'rgba(255,255,255,0.25)', width:'100%', marginBottom:8}} onClick={onSwitchToAdmin}>
