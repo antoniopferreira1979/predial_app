@@ -478,6 +478,13 @@ const uid = (p) => p + '-' + Math.random().toString(36).slice(2,8);
 const todayISO = () => new Date().toISOString().slice(0,10);
 const fmtEUR = (v) => (v===''||v===null||v===undefined||isNaN(v)) ? '—' :
   new Intl.NumberFormat('pt-PT',{style:'currency',currency:'EUR'}).format(Number(v));
+// Versão compacta para etiquetas de eixos de gráficos (ex: "1,2 k €"), onde o
+// formato completo do fmtEUR ocuparia demasiado espaço.
+const fmtEURCompact = (v) => {
+  const n = Number(v||0);
+  if(n>=1000) return (n/1000).toFixed(n>=10000 ? 0 : 1).replace('.',',') + ' k€';
+  return Math.round(n) + ' €';
+};
 const fmtDate = (v) => {
   if(!v) return '—';
   const d = new Date(v+'T00:00:00');
@@ -496,6 +503,27 @@ const addMonthsToDate = (v, months) => {
   d.setMonth(d.getMonth() + Number(months||0));
   return d.toISOString().slice(0,10);
 };
+
+// Valida o formato de um NIF português (9 dígitos + dígito de controlo, algoritmo
+// oficial módulo 11). Um NIF vazio é considerado válido — o campo é opcional em
+// toda a app; só avisa quando há algo escrito e esse algo não é um NIF possível.
+function validarNIF(nif){
+  if(!nif) return true;
+  const limpo = String(nif).trim().replace(/\s/g, '');
+  if(!/^\d{9}$/.test(limpo)) return false;
+  const digitos = limpo.split('').map(Number);
+  let soma = 0;
+  for(let i=0; i<8; i++){ soma += digitos[i] * (9 - i); }
+  const resto = soma % 11;
+  const controlo = resto < 2 ? 0 : 11 - resto;
+  return controlo === digitos[8];
+}
+
+// Pequeno aviso visual, não bloqueante, para usar a seguir a um campo de NIF.
+function NifAviso({nif}){
+  if(!nif || validarNIF(nif)) return null;
+  return <div style={{fontSize:11, color:'var(--rust)', marginTop:2}}>NIF inválido — verifique os dígitos.</div>;
+}
 
 const MAX_ANEXO_BYTES = 2 * 1024 * 1024; // 2MB por PDF anexado (limite prudente para o espaço do navegador)
 
@@ -548,6 +576,12 @@ const SITUACOES_IMOVEL = ['Ativo','Vendido'];
 const PRIORIDADES = ['Alta','Média','Baixa'];
 const ESTADOS_MANUT = ['Pendente','Em Curso','Concluído'];
 const ESTADOS_WAITLIST = ['Ativo','Contactado','Convertido','Inativo'];
+// Estado do dinheiro da caução — nunca é renda e nunca entra no Relatório
+// Financeiro ou no Acerto de Contas (buildRelatorio/buildAcertoContas ignoram
+// por completo o campo `caucao`); isto é só para o senhorio não perder o rasto
+// de quanto está retido e porquê.
+const ESTADOS_CAUCAO = ['Ativa','Devolvida','Retida'];
+const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 /* ============================== Configuração do Supabase ============================== */
 // Substitua estes dois valores pelos do seu projeto Supabase:
@@ -801,6 +835,12 @@ function situacaoImovelTag(im){
 
 function estadoFiadorTag(ativo){
   return ativo ? <Tag kind="verdigris">Ativo</Tag> : <Tag kind="gray">Histórico</Tag>;
+}
+
+function estadoCaucaoTag(estado){
+  if(estado==='Devolvida') return <Tag kind="verdigris">Devolvida</Tag>;
+  if(estado==='Retida') return <Tag kind="rust">Retida</Tag>;
+  return <Tag kind="amber">Ativa</Tag>;
 }
 // Um fiador é "ativo" enquanto o contrato que afiança estiver Ativo ou A Expirar.
 // Não é um campo gravado — evita duplicar o mesmo tipo de erro da "dupla renda"
@@ -1482,6 +1522,16 @@ function Dashboard({data, setView}){
   const contratoOf = (id) => data.contratos.find(c=>c.id===id);
   const imovelOf = (id) => data.imoveis.find(i=>i.id===id);
 
+  // Contratos com o prazo de aviso de oposição à renovação a aproximar-se (ou já
+  // ultrapassado) — até 120 dias de antecedência. avisoRescisaoInfo() já existe
+  // e é usada na lista de Contratos; aqui é só reaproveitada para dar visibilidade
+  // no Escritório, que é onde esta informação tem mais impacto prático.
+  const avisosProximos = data.contratos
+    .filter(c => !c.rescindido)
+    .map(c => ({c, aviso: avisoRescisaoInfo(c)}))
+    .filter(x => x.aviso && x.aviso.dias <= 120)
+    .sort((a,b) => a.aviso.dias - b.aviso.dias);
+
   return (
     <React.Fragment>
       <div className="topbar">
@@ -1522,6 +1572,27 @@ function Dashboard({data, setView}){
 
         <div className="dash-grid">
           <div>
+            {avisosProximos.length>0 && (
+              <div className="panel">
+                <h3>Prazos de oposição à renovação <span className="muted">aviso prévio a aproximar-se</span></h3>
+                {avisosProximos.map(({c, aviso})=>{
+                  const im = imovelOf(c.imovelId);
+                  const atrasado = aviso.dias < 0;
+                  const kind = atrasado ? 'rust' : (aviso.dias<=30 ? 'rust' : 'amber');
+                  const label = atrasado ? ('prazo passado há ' + Math.abs(aviso.dias) + ' dias') : (aviso.dias===0 ? 'hoje' : ('em ' + aviso.dias + ' dias'));
+                  return (
+                    <div className="list-row" key={c.id}>
+                      <div>
+                        <div className="t1">{im ? im.nome : c.imovelId}</div>
+                        <div className="t2">Limite para aviso: {fmtDate(aviso.dataLimiteISO)} · contrato até {fmtDate(c.dataFim)}</div>
+                      </div>
+                      <Tag kind={kind}>{label}</Tag>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="panel">
               <h3>Próximos pagamentos <span className="muted">por vencer</span></h3>
               {proximosPagamentos.length===0 && <div className="empty">Sem pagamentos pendentes de registo.</div>}
@@ -2019,7 +2090,7 @@ function ProprietarioForm({item, imoveis, onSave, onCancel}){
           </select>
         </div>
         <div className="field"><label>Nome do proprietário</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
-        <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /></div>
+        <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /><NifAviso nif={f.nif} /></div>
         <div className="field"><label>Contacto</label><input value={f.contacto} onChange={e=>set('contacto',e.target.value)} /></div>
         <div className="field full">
           <label>Email (opcional — dá acesso ao painel de Proprietário)</label>
@@ -2084,7 +2155,7 @@ function TransferirFracaoForm({sellerRow, outros, onSave, onCancel}){
         {!compradorExistenteId && (
           <React.Fragment>
             <div className="field"><label>Nome do novo proprietário</label><input value={novoNome} onChange={e=>setNovoNome(e.target.value)} /></div>
-            <div className="field"><label>NIF</label><input value={novoNif} onChange={e=>setNovoNif(e.target.value)} /></div>
+            <div className="field"><label>NIF</label><input value={novoNif} onChange={e=>setNovoNif(e.target.value)} /><NifAviso nif={novoNif} /></div>
             <div className="field"><label>Contacto</label><input value={novoContacto} onChange={e=>setNovoContacto(e.target.value)} /></div>
             <div className="field"><label>Email (opcional — dá acesso)</label><input type="email" value={novoEmail} onChange={e=>setNovoEmail(e.target.value)} /></div>
           </React.Fragment>
@@ -2149,7 +2220,7 @@ function InquilinoForm({item, imoveis, onSave, onCancel}){
     <React.Fragment>
       <div className="form-grid">
         <div className="field full"><label>Nome</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
-        <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /></div>
+        <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /><NifAviso nif={f.nif} /></div>
         <div className="field"><label>Telefone</label><input value={f.telefone} onChange={e=>set('telefone',e.target.value)} /></div>
         <div className="field full"><label>Email</label><input value={f.email} onChange={e=>set('email',e.target.value)} /></div>
         <div className="field"><label>Imóvel associado</label>
@@ -2208,7 +2279,7 @@ function avisoRescisaoInfo(c){
 }
 
 function ContratosView({data, addOrEdit, remove, modal, setModal}){
-  const empty = {id:'', imovelId:'', inquilinoId:'', dataInicio:'', dataFim:'', renda:'', caucao:'', prazoAvisoRescisao:120, renovavel:false, periodoRenovacaoMeses:'', sujeitoRetencao:false, percentagemRetencao:'', rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', documentosAnexados:[], notas:''};
+  const empty = {id:'', imovelId:'', inquilinoId:'', dataInicio:'', dataFim:'', renda:'', caucao:'', caucaoEstado:'Ativa', caucaoData:'', caucaoValorDevolvido:'', caucaoMotivo:'', prazoAvisoRescisao:120, renovavel:false, periodoRenovacaoMeses:'', sujeitoRetencao:false, percentagemRetencao:'', rescindido:false, dataRescisao:'', motivoRescisao:'', temAnexoRescisao:false, anexoRescisaoNome:'', anexoRescisaoTipo:'', documentosAnexados:[], notas:''};
   const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
   const inquilinoNome = (id) => { const iq = data.inquilinos.find(i=>i.id===id); return iq ? iq.nome : '—'; };
   const [expanded, setExpanded] = useState(null);
@@ -2356,6 +2427,22 @@ function ContratosView({data, addOrEdit, remove, modal, setModal}){
                           {c.sujeitoRetencao
                             ? <span>Sujeito a retenção na fonte de {(Number(c.percentagemRetencao||0)*100).toFixed(0)}%</span>
                             : <span style={{color:'var(--gray)'}}>Não sujeito a retenção na fonte.</span>}
+                        </div>
+
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                          <div style={{fontWeight:700, fontSize:13}}>Caução</div>
+                          {estadoCaucaoTag(c.caucaoEstado)}
+                        </div>
+                        <div style={{fontSize:12.5, color:'var(--charcoal)', marginBottom:16}}>
+                          {!c.caucao ? (
+                            <span style={{color:'var(--gray)'}}>Sem caução registada para este contrato.</span>
+                          ) : (c.caucaoEstado==='Ativa' || !c.caucaoEstado) ? (
+                            <span>{fmtEUR(c.caucao)} retida, ainda não devolvida ao inquilino. Este valor nunca entra no Relatório Financeiro nem no Acerto de Contas — não é renda.</span>
+                          ) : c.caucaoEstado==='Devolvida' ? (
+                            <span>{fmtEUR(c.caucaoValorDevolvido || c.caucao)} devolvida ao inquilino{c.caucaoData ? (' em ' + fmtDate(c.caucaoData)) : ''}.{c.caucaoMotivo ? (' ' + c.caucaoMotivo) : ''}</span>
+                          ) : (
+                            <span>Retida{c.caucaoData ? (' em ' + fmtDate(c.caucaoData)) : ''} — de {fmtEUR(c.caucao)}, {fmtEUR(c.caucaoValorDevolvido || 0)} foi devolvida e {fmtEUR(Number(c.caucao||0) - Number(c.caucaoValorDevolvido||0))} ficou retida.{c.caucaoMotivo ? (' Motivo: ' + c.caucaoMotivo) : ''}</span>
+                          )}
                         </div>
 
                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
@@ -2540,6 +2627,20 @@ function ContratoForm({item, imoveis, inquilinos, onSave, onCancel}){
         <div className="field"><label>Data de fim</label><input type="date" value={f.dataFim} onChange={e=>set('dataFim',e.target.value)} /></div>
         <div className="field"><label>Renda inicial (€)</label><input type="number" value={f.renda} onChange={e=>set('renda',e.target.value)} /></div>
         <div className="field"><label>Caução (€)</label><input type="number" value={f.caucao} onChange={e=>set('caucao',e.target.value)} /></div>
+        <div className="field"><label>Estado da caução</label>
+          <select value={f.caucaoEstado || 'Ativa'} onChange={e=>set('caucaoEstado', e.target.value)}>
+            {ESTADOS_CAUCAO.map(estado=><option key={estado} value={estado}>{estado}</option>)}
+          </select>
+        </div>
+        {(f.caucaoEstado==='Devolvida' || f.caucaoEstado==='Retida') && (
+          <React.Fragment>
+            <div className="field"><label>Data do movimento</label><input type="date" value={f.caucaoData||''} onChange={e=>set('caucaoData',e.target.value)} /></div>
+            <div className="field"><label>Valor devolvido ao inquilino (€)</label>
+              <input type="number" value={f.caucaoValorDevolvido} onChange={e=>set('caucaoValorDevolvido',e.target.value)} placeholder={f.caucaoEstado==='Devolvida' ? ('ex: '+f.caucao) : '0 se ficou tudo retido'} />
+            </div>
+            <div className="field full"><label>Motivo (se houve retenção, descreva os danos)</label><input value={f.caucaoMotivo||''} onChange={e=>set('caucaoMotivo',e.target.value)} /></div>
+          </React.Fragment>
+        )}
         <div className="field full"><label>Prazo para envio de aviso de rescisão (dias antes do fim)</label><input type="number" placeholder="ex: 120" value={f.prazoAvisoRescisao} onChange={e=>set('prazoAvisoRescisao',e.target.value)} /></div>
         <div className="field">
           <label>Contrato renovável?</label>
@@ -2854,7 +2955,7 @@ function FiadorForm({item, contratos, imoveis, onSave, onCancel}){
     <React.Fragment>
       <div className="form-grid">
         <div className="field full"><label>Nome</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
-        <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /></div>
+        <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /><NifAviso nif={f.nif} /></div>
         <div className="field"><label>Telefone</label><input value={f.telefone} onChange={e=>set('telefone',e.target.value)} /></div>
         <div className="field full"><label>Email</label><input value={f.email} onChange={e=>set('email',e.target.value)} /></div>
         <div className="field full"><label>Morada</label><input value={f.morada} onChange={e=>set('morada',e.target.value)} /></div>
@@ -3020,7 +3121,7 @@ function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietari
 /* ============================== Manutenção ============================== */
 function ManutencaoView({data, addOrEdit, remove, modal, setModal, userEmail, userLabel, canEdit}){
   canEdit = canEdit===undefined ? true : canEdit;
-  const empty = {id:'', imovelId:'', dataPedido:todayISO(), descricao:'', prioridade:'Média', estado:'Pendente', custo:'', fornecedor:'', temFatura:false, faturaNome:'', faturaTipo:'', despesaId:'', registadoPorNome:userLabel||'Administrador', registadoPorEmail:userEmail||'', pagoPorNome:userLabel||'Administrador'};
+  const empty = {id:'', imovelId:'', dataPedido:todayISO(), descricao:'', prioridade:'Média', estado:'Pendente', custo:'', fornecedor:'', orcamentos:[], orcamentoAprovadoId:'', temFatura:false, faturaNome:'', faturaTipo:'', despesaId:'', registadoPorNome:userLabel||'Administrador', registadoPorEmail:userEmail||'', pagoPorNome:userLabel||'Administrador'};
   const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
   const [busyId, setBusyId] = useState(null);
 
@@ -3105,7 +3206,10 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal, userEmail, us
                 <td>{m.descricao}</td>
                 <td><Tag kind={m.prioridade==='Alta'?'rust':m.prioridade==='Média'?'amber':'gray'}>{m.prioridade}</Tag></td>
                 <td>{estadoManutTag(m.estado)}</td>
-                <td>{fmtEUR(m.custo)}</td>
+                <td>
+                  {fmtEUR(m.custo)}
+                  {(m.orcamentos||[]).length>0 && <div style={{fontSize:11, color:'var(--gray)', marginTop:3}}>{m.orcamentos.length} orçamento{m.orcamentos.length!==1?'s':''} comparado{m.orcamentos.length!==1?'s':''}</div>}
+                </td>
                 <td>
                   {m.pagoPorNome || '—'}
                   {m.registadoPorNome && <div style={{fontSize:11, color:'var(--gray)'}}>registado por {m.registadoPorNome}</div>}
@@ -3143,12 +3247,29 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal, userEmail, us
 }
 
 function ManutForm({item, imoveis, onSave, onCancel}){
-  const [f, setF] = useState(item);
+  const [f, setF] = useState({...item, orcamentos: item.orcamentos || []});
   const [pendingFile, setPendingFile] = useState(null);
   const [removeExisting, setRemoveExisting] = useState(false);
   const [criarDespesa, setCriarDespesa] = useState(!!item.despesaId || Number(item.custo)>0);
   const [error, setError] = useState('');
+  const [novoOrcFornecedor, setNovoOrcFornecedor] = useState('');
+  const [novoOrcValor, setNovoOrcValor] = useState('');
+  const [novoOrcNotas, setNovoOrcNotas] = useState('');
   const set = (k,v)=>setF(s=>({...s,[k]:v}));
+
+  const orcamentos = f.orcamentos || [];
+  const adicionarOrcamento = () => {
+    if(!novoOrcFornecedor.trim() || novoOrcValor===''){ return; }
+    const novo = {id:uid('ORC'), fornecedor:novoOrcFornecedor.trim(), valor:Number(novoOrcValor), notas:novoOrcNotas.trim()};
+    setF(s=>({...s, orcamentos:[...(s.orcamentos||[]), novo]}));
+    setNovoOrcFornecedor(''); setNovoOrcValor(''); setNovoOrcNotas('');
+  };
+  const removerOrcamento = (id) => {
+    setF(s=>({...s, orcamentos:(s.orcamentos||[]).filter(o=>o.id!==id), orcamentoAprovadoId: s.orcamentoAprovadoId===id ? '' : s.orcamentoAprovadoId}));
+  };
+  const aprovarOrcamento = (orc) => {
+    setF(s=>({...s, orcamentoAprovadoId:orc.id, fornecedor:orc.fornecedor, custo:orc.valor}));
+  };
 
   const onFileChange = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -3212,6 +3333,40 @@ function ManutForm({item, imoveis, onSave, onCancel}){
             Registado por: {f.registadoPorNome}{f.registadoPorEmail ? (' · ' + f.registadoPorEmail) : ''}
           </div>
         )}
+
+        <div className="field full">
+          <label>Orçamentos de fornecedores <span style={{fontWeight:400, color:'var(--gray)'}}>(compara antes de aprovar a reparação)</span></label>
+
+          {orcamentos.length===0 && <div style={{fontSize:12, color:'var(--gray)', marginBottom:8}}>Ainda sem orçamentos registados.</div>}
+
+          {orcamentos.length>0 && (
+            <div style={{marginBottom:10}}>
+              {[...orcamentos].sort((a,b)=>Number(a.valor||0)-Number(b.valor||0)).map(orc=>{
+                const aprovado = f.orcamentoAprovadoId===orc.id;
+                return (
+                  <div key={orc.id} className="list-row" style={aprovado ? {background:'var(--verdigris-light)', borderRadius:6} : undefined}>
+                    <div>
+                      <div className="t1">{orc.fornecedor} — {fmtEUR(orc.valor)}{aprovado && <span style={{marginLeft:8}}><Tag kind="verdigris">Aprovado</Tag></span>}</div>
+                      {orc.notas && <div className="t2">{orc.notas}</div>}
+                    </div>
+                    <div className="row-actions">
+                      {!aprovado && <button type="button" className="icon-btn" onClick={()=>aprovarOrcamento(orc)}>Aprovar</button>}
+                      <button type="button" className="icon-btn danger" onClick={()=>removerOrcamento(orc.id)}>Remover</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-end'}}>
+            <input style={{flex:'1 1 140px'}} placeholder="Fornecedor" value={novoOrcFornecedor} onChange={e=>setNovoOrcFornecedor(e.target.value)} />
+            <input style={{flex:'0 1 100px'}} type="number" placeholder="Valor (€)" value={novoOrcValor} onChange={e=>setNovoOrcValor(e.target.value)} />
+            <input style={{flex:'1 1 140px'}} placeholder="Notas (opcional)" value={novoOrcNotas} onChange={e=>setNovoOrcNotas(e.target.value)} />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={adicionarOrcamento}>+ Adicionar</button>
+          </div>
+          <div style={{fontSize:11, color:'var(--gray)', marginTop:4}}>Aprovar um orçamento preenche automaticamente o Fornecedor e o Custo abaixo.</div>
+        </div>
 
         <div className="field full">
           <label>Fatura (PDF ou foto)</label>
@@ -3978,6 +4133,85 @@ function donoKey(p){ return p.nif ? ('nif:'+p.nif) : ('nome:'+(p.nome||'')); }
 // aplicar a percentagem atual a todo o ano — assim uma transferência de fração
 // a meio do ano, ou um imóvel vendido durante o ano fiscal, não distorce anos
 // em que a titularidade era outra.
+// Totais de receita (rendas efetivamente recebidas) e despesa por mês, para o
+// gráfico de evolução do Relatório Financeiro. É a nível do imóvel (não
+// repartido por proprietário, ao contrário de buildRelatorio) — o ponto aqui
+// é mostrar a evolução do cash-flow ao longo do ano, não a quota de cada um.
+function buildEvolucaoMensal(data, anoFiscal, filtroImovelId){
+  const meses = Array.from({length:12}, (_, i) => ({mes: i+1, receita:0, despesa:0}));
+  data.imoveis.forEach(im => {
+    if(filtroImovelId!=='todos' && im.id!==filtroImovelId) return;
+    const contratosDoImovel = data.contratos.filter(c=>c.imovelId===im.id);
+
+    data.pagamentos.forEach(p => {
+      if(p.valorPago==='' || p.valorPago==null) return;
+      if(!p.mesRef || !p.mesRef.startsWith(String(anoFiscal))) return;
+      const contrato = contratosDoImovel.find(c=>c.id===p.contratoId);
+      if(!contrato) return;
+      const mesIdx = Number(p.mesRef.slice(5,7)) - 1;
+      if(mesIdx>=0 && mesIdx<12) meses[mesIdx].receita += Number(p.valorPago||0);
+    });
+
+    data.despesas
+      .filter(d => d.imovelId===im.id && Number(d.anoFiscal)===Number(anoFiscal))
+      .forEach(d => {
+        const dataISO = d.data || (anoFiscal + '-01-01');
+        const mesIdx = Number(dataISO.slice(5,7)) - 1;
+        if(mesIdx>=0 && mesIdx<12) meses[mesIdx].despesa += Number(d.valor||0);
+      });
+  });
+  return meses;
+}
+
+function GraficoEvolucaoMensal({meses}){
+  const W = 760, H = 230;
+  const padL = 54, padR = 14, padT = 14, padB = 26;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const maxValBruto = Math.max(1, ...meses.map(m=>Math.max(m.receita, m.despesa)));
+  const maxVal = maxValBruto * 1.12; // margem para não cortar a barra mais alta
+  const scale = (v) => (v / maxVal) * plotH;
+  const groupW = plotW / meses.length;
+  const barW = Math.max(6, Math.min(16, groupW * 0.32));
+  const gridFracs = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <div style={{overflowX:'auto'}}>
+      <svg viewBox={'0 0 ' + W + ' ' + H} style={{width:'100%', minWidth:560, height:'auto', display:'block'}}>
+        {gridFracs.map((frac,i)=>{
+          const y = padT + plotH - frac*plotH;
+          return (
+            <React.Fragment key={i}>
+              <line x1={padL} x2={W-padR} y1={y} y2={y} stroke="var(--line)" strokeWidth={frac===0?1:0.75} strokeDasharray={frac===0?'0':'3,3'} />
+              <text x={padL-8} y={y+3.5} textAnchor="end" fontSize="10" fill="var(--gray)">{fmtEURCompact(maxVal*frac)}</text>
+            </React.Fragment>
+          );
+        })}
+        {meses.map((m,i)=>{
+          const gx = padL + i*groupW;
+          const cx = gx + groupW/2;
+          const hR = scale(m.receita), hD = scale(m.despesa);
+          return (
+            <React.Fragment key={i}>
+              <rect x={cx-barW-2} y={padT+plotH-hR} width={barW} height={Math.max(hR,0)} rx="2" fill="var(--verdigris)" />
+              <rect x={cx+2} y={padT+plotH-hD} width={barW} height={Math.max(hD,0)} rx="2" fill="var(--rust)" />
+              <text x={cx} y={H-8} textAnchor="middle" fontSize="10.5" fill="var(--gray)">{MESES_ABREV[i]}</text>
+            </React.Fragment>
+          );
+        })}
+      </svg>
+      <div style={{display:'flex', gap:18, justifyContent:'center', marginTop:2, fontSize:11.5, color:'var(--charcoal)'}}>
+        <span style={{display:'flex', alignItems:'center', gap:5}}><span style={{width:10, height:10, borderRadius:2, background:'var(--verdigris)', display:'inline-block'}}></span>Receita recebida</span>
+        <span style={{display:'flex', alignItems:'center', gap:5}}><span style={{width:10, height:10, borderRadius:2, background:'var(--rust)', display:'inline-block'}}></span>Despesas</span>
+      </div>
+    </div>
+  );
+}
+
+// Nota: a caução (Contrato.caucao/caucaoEstado/caucaoValorDevolvido) nunca
+// entra neste cálculo, propositadamente — é dinheiro do inquilino em
+// depósito, não renda do proprietário. Só os pagamentos de renda (valorPago
+// em data.pagamentos) e as despesas contam para rendaBruta/despesas abaixo.
 function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
   const porDono = {}; // imovelId+'|'+donoKey -> linha acumulada
 
@@ -4295,6 +4529,7 @@ function RelatorioFinanceiroView({data, lockedEmail}){
   if(lockedEmail){
     linhas = linhas.filter(l => (l.email||'').toLowerCase() === lockedEmail.toLowerCase());
   }
+  const evolucaoMensal = buildEvolucaoMensal(data, anoFiscal, filtroImovelId);
 
   const totais = linhas.reduce((acc,l)=>({
     rendaBruta: acc.rendaBruta+l.rendaBruta,
@@ -4402,6 +4637,11 @@ function RelatorioFinanceiroView({data, lockedEmail}){
         <div className="kpi-card"><div className="label">Despesas não dedutíveis</div><div className="value" style={{color:'var(--gray)'}}>{fmtEUR(totais.despesasNaoDedutiveis)}</div></div>
         <div className="kpi-card"><div className="label">Resultado fiscal (base do IRS)</div><div className="value" style={{color: totais.resultado>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultado)}</div></div>
         <div className="kpi-card"><div className="label">Resultado real (após todas as despesas)</div><div className="value" style={{color: totais.resultadoReal>=0 ? 'var(--verdigris)' : 'var(--rust)'}}>{fmtEUR(totais.resultadoReal)}</div></div>
+      </div>
+
+      <div className="panel">
+        <h3>Evolução mensal <span className="muted">receita recebida vs. despesas, {anoFiscal}</span></h3>
+        <GraficoEvolucaoMensal meses={evolucaoMensal} />
       </div>
 
       <div className="table-wrap">
