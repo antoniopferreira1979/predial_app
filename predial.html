@@ -680,6 +680,7 @@ const TABLE_MAP = {
   documentos: 'documentos',
   listaEspera: 'lista_espera',
   proprietarios: 'proprietarios',
+  titularidades: 'titularidades',
   atualizacoesRenda: 'atualizacoes_renda',
   vistorias: 'vistorias',
   despesas: 'despesas',
@@ -902,23 +903,38 @@ function matchesImovel(entry, imovel){
   return true;
 }
 
+// A partir da reestruturação de novembro de 2026, "proprietarios" guarda só a
+// PESSOA (nome, nif, email, contacto) — uma linha por pessoa, partilhada entre
+// todos os imóveis onde tem posição. A posição em si (imóvel + percentagem +
+// datas) vive em "titularidades", que liga a um proprietarioId. tComPessoa()
+// junta as duas e devolve o formato "achatado" que o resto da app sempre usou
+// (nome/nif/email/percentagem no mesmo objeto), para minimizar alterações em
+// quem só lê estes dados.
+function tComPessoa(t, proprietarios){
+  const p = proprietarios.find(pr=>pr.id===t.proprietarioId) || {};
+  return {
+    id: t.id, imovelId: t.imovelId, proprietarioId: t.proprietarioId,
+    nome: p.nome || '(proprietário removido)', nif: p.nif || '', email: p.email || '', contacto: p.contacto || '',
+    percentagem: t.percentagem, dataInicio: t.dataInicio, dataFim: t.dataFim, notas: t.notas,
+  };
+}
 // Proprietários "atuais" de um imóvel — exclui posições já encerradas (dataFim
 // preenchida) por uma transferência de fração. Uma linha sem dataInicio/dataFim
 // é sempre válida (dados anteriores a esta funcionalidade, ou posição em curso).
-function proprietariosAtuais(proprietarios, imovelId){
-  return proprietarios.filter(p=>p.imovelId===imovelId && !p.dataFim);
+function proprietariosAtuais(proprietarios, titularidades, imovelId){
+  return titularidades.filter(t=>t.imovelId===imovelId && !t.dataFim).map(t=>tComPessoa(t, proprietarios));
 }
 // Proprietários válidos numa data específica — usado para atribuir rendas e
 // despesas ao(s) proprietário(s) que efetivamente detinham a fração nesse dia,
 // mesmo que a propriedade tenha mudado de mãos entretanto.
-function proprietariosNaData(proprietarios, imovelId, dataISO){
-  return proprietarios.filter(p=>p.imovelId===imovelId
-    && (!p.dataInicio || p.dataInicio<=dataISO)
-    && (!p.dataFim || p.dataFim>=dataISO));
+function proprietariosNaData(proprietarios, titularidades, imovelId, dataISO){
+  return titularidades.filter(t=>t.imovelId===imovelId
+    && (!t.dataInicio || t.dataInicio<=dataISO)
+    && (!t.dataFim || t.dataFim>=dataISO)).map(t=>tComPessoa(t, proprietarios));
 }
 
-function percentByImovel(proprietarios, imovelId){
-  return proprietariosAtuais(proprietarios, imovelId).reduce((s,p)=>s+Number(p.percentagem||0),0);
+function percentByImovel(proprietarios, titularidades, imovelId){
+  return proprietariosAtuais(proprietarios, titularidades, imovelId).reduce((s,p)=>s+Number(p.percentagem||0),0);
 }
 
 /* ============================== App ============================== */
@@ -1252,7 +1268,7 @@ function MainApp({userId, userEmail, onSignOut, proprietarioDisponivel, onSwitch
     pagamentos: data.pagamentos.filter(p => estadoPagamento(p).label==='Em Atraso').length,
     manutencao: data.manutencoes.filter(m => m.estado!=='Concluído').length,
     proprietarios: data.imoveis.filter(im => {
-      const soma = percentByImovel(data.proprietarios, im.id);
+      const soma = percentByImovel(data.proprietarios, data.titularidades, im.id);
       return soma>0 && Math.abs(soma-1) > 0.001;
     }).length,
     listaespera: data.listaEspera.filter(w => w.estado==='Ativo').length,
@@ -1451,7 +1467,8 @@ function ProprietarioView({userId, userEmail, ownerUserId, meuNome, onSignOut, o
                   {data.imoveis.map(im=>{
                     // Prioriza a posição atual (sem dataFim); uma fração já vendida
                     // não deve continuar a mostrar a antiga percentagem como se fosse atual.
-                    const meusRegistos = data.proprietarios.filter(p=>p.imovelId===im.id && (p.email||'').toLowerCase()===(userEmail||'').toLowerCase());
+                    const titsDoImovel = data.titularidades.filter(t=>t.imovelId===im.id).map(t=>tComPessoa(t, data.proprietarios));
+                    const meusRegistos = titsDoImovel.filter(p=>(p.email||'').toLowerCase()===(userEmail||'').toLowerCase());
                     const meu = meusRegistos.find(p=>!p.dataFim) || null;
                     return (
                       <tr key={im.id}>
@@ -1728,7 +1745,7 @@ function ImoveisView({data, addOrEdit, remove, modal, setModal, setView}){
 
   const empty = {id:'', nome:'', morada:'', tipo:'Apartamento', area:'', quartos:'', estado:'Vago', renda:'', notas:'', situacao:'Ativo', dataVenda:''};
   const anexosCount = (imovelId) => data.documentos.filter(d=>d.imovelId===imovelId && d.temAnexo).length;
-  const donosDoImovel = (imovelId) => proprietariosAtuais(data.proprietarios, imovelId);
+  const donosDoImovel = (imovelId) => proprietariosAtuais(data.proprietarios, data.titularidades, imovelId);
   const donosResumo = (imovelId) => {
     const donos = donosDoImovel(imovelId);
     if(donos.length===0) return null;
@@ -1902,7 +1919,11 @@ function ImovelForm({item, proprietarios, onGerirProprietarios, onSave, onCancel
 
 /* ============================== Proprietários (co-propriedade) ============================== */
 function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
-  const empty = {id:'', imovelId:'', nome:'', nif:'', email:'', percentagem:'', contacto:'', notas:'', dataInicio:'', dataFim:''};
+  // "empty" é a semente usada pelo formulário combinado (pessoa + posição); só
+  // existe no estado local do formulário — ao gravar divide-se em dois
+  // addOrEdit, um para 'proprietarios' (pessoa) e outro para 'titularidades'
+  // (posição nesse imóvel). Ver salvarProprietario() abaixo.
+  const empty = {id:'', imovelId:'', proprietarioId:'', nome:'', nif:'', email:'', percentagem:'', contacto:'', notas:'', dataInicio:'', dataFim:''};
   const imovelInfo = (id) => data.imoveis.find(i=>i.id===id);
   const [historicoAberto, setHistoricoAberto] = useState(null);
 
@@ -1911,41 +1932,66 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
   // à parte, no histórico de cada imóvel — não contam para a soma nem aparecem aqui.
   const porImovel = data.imoveis.map(im => ({
     imovel: im,
-    donos: proprietariosAtuais(data.proprietarios, im.id),
-    historico: data.proprietarios.filter(p=>p.imovelId===im.id && p.dataFim).sort((a,b)=>(a.dataFim||'').localeCompare(b.dataFim||'')),
+    donos: proprietariosAtuais(data.proprietarios, data.titularidades, im.id),
+    historico: data.titularidades.filter(t=>t.imovelId===im.id && t.dataFim).map(t=>tComPessoa(t, data.proprietarios)).sort((a,b)=>(a.dataFim||'').localeCompare(b.dataFim||'')),
   })).filter(g => g.donos.length>0 || g.historico.length>0);
 
-  const semProprietario = data.imoveis.filter(im => proprietariosAtuais(data.proprietarios, im.id).length===0 && !data.proprietarios.some(p=>p.imovelId===im.id && p.dataFim));
+  const semProprietario = data.imoveis.filter(im => proprietariosAtuais(data.proprietarios, data.titularidades, im.id).length===0 && !data.titularidades.some(t=>t.imovelId===im.id && t.dataFim));
+
+  // Grava a pessoa (se for nova ou se os seus dados foram editados neste
+  // formulário) e a posição (titularidade) num só passo. proprietarioId vazio
+  // => é uma pessoa nova, cria-se aqui; preenchido => reutiliza a pessoa já
+  // existente (atualizando os seus dados de contacto, se foram alterados).
+  const salvarProprietario = (f) => {
+    const proprietarioId = f.proprietarioId || uid('PR');
+    addOrEdit('proprietarios', {id: proprietarioId, nome: f.nome, nif: f.nif||'', email: f.email||'', contacto: f.contacto||''});
+    addOrEdit('titularidades', {
+      id: f.id || uid('TT'), imovelId: f.imovelId, proprietarioId,
+      percentagem: f.percentagem, dataInicio: f.dataInicio||'', dataFim: f.dataFim||'', notas: f.notas||'',
+    });
+    setModal(null);
+  };
 
   const executarTransferencia = (sellerRow, formData) => {
     const pctTransferir = Number(formData.percentagem||0)/100;
     const dataT = formData.data || todayISO();
     const sellerRemaining = Number(sellerRow.percentagem||0) - pctTransferir;
 
-    // Encerra a posição atual do vendedor à data da transferência.
-    addOrEdit('proprietarios', {...sellerRow, dataFim: dataT});
+    // Encerra a posição (titularidade) atual do vendedor à data da transferência.
+    addOrEdit('titularidades', {id: sellerRow.id, imovelId: sellerRow.imovelId, proprietarioId: sellerRow.proprietarioId, percentagem: sellerRow.percentagem, dataInicio: sellerRow.dataInicio||'', dataFim: dataT, notas: sellerRow.notas||''});
     // Se ainda ficar com alguma percentagem, reabre uma nova posição para o vendedor.
     if(sellerRemaining > 0.0009){
-      addOrEdit('proprietarios', {
-        ...sellerRow, id: uid('PR'), percentagem: sellerRemaining, dataInicio: dataT, dataFim: '',
+      addOrEdit('titularidades', {
+        id: uid('TT'), imovelId: sellerRow.imovelId, proprietarioId: sellerRow.proprietarioId, percentagem: sellerRemaining, dataInicio: dataT, dataFim: '',
         notas: (sellerRow.notas ? sellerRow.notas + ' — ' : '') + 'Posição atualizada após transferir ' + Math.round(pctTransferir*100) + '% em ' + fmtDate(dataT),
       });
     }
 
-    if(formData.compradorExistenteId){
-      const buyerRow = data.proprietarios.find(p=>p.id===formData.compradorExistenteId);
+    if(formData.compradorTitularidadeId){
+      // Compra por quem já é copropietário DESTE imóvel: encerra a posição dele
+      // e reabre com a percentagem somada.
+      const buyerRow = data.titularidades.map(t=>tComPessoa(t, data.proprietarios)).find(t=>t.id===formData.compradorTitularidadeId);
       if(buyerRow){
         const buyerNovo = Number(buyerRow.percentagem||0) + pctTransferir;
-        addOrEdit('proprietarios', {...buyerRow, dataFim: dataT});
-        addOrEdit('proprietarios', {
-          ...buyerRow, id: uid('PR'), percentagem: buyerNovo, dataInicio: dataT, dataFim: '',
+        addOrEdit('titularidades', {id: buyerRow.id, imovelId: buyerRow.imovelId, proprietarioId: buyerRow.proprietarioId, percentagem: buyerRow.percentagem, dataInicio: buyerRow.dataInicio||'', dataFim: dataT, notas: buyerRow.notas||''});
+        addOrEdit('titularidades', {
+          id: uid('TT'), imovelId: buyerRow.imovelId, proprietarioId: buyerRow.proprietarioId, percentagem: buyerNovo, dataInicio: dataT, dataFim: '',
           notas: (buyerRow.notas ? buyerRow.notas + ' — ' : '') + 'Adquiriu ' + Math.round(pctTransferir*100) + '% de ' + sellerRow.nome + ' em ' + fmtDate(dataT),
         });
       }
+    } else if(formData.compradorPessoaId){
+      // Pessoa já registada na carteira, mas sem posição ainda neste imóvel:
+      // só precisa de uma titularidade nova, a pessoa já existe.
+      addOrEdit('titularidades', {
+        id: uid('TT'), imovelId: sellerRow.imovelId, proprietarioId: formData.compradorPessoaId, percentagem: pctTransferir,
+        dataInicio: dataT, dataFim: '', notas: 'Adquiriu ' + Math.round(pctTransferir*100) + '% de ' + sellerRow.nome + ' em ' + fmtDate(dataT),
+      });
     } else if(formData.novoNome) {
-      addOrEdit('proprietarios', {
-        id: uid('PR'), imovelId: sellerRow.imovelId, nome: formData.novoNome, nif: formData.novoNif||'',
-        email: formData.novoEmail||'', contacto: formData.novoContacto||'', percentagem: pctTransferir,
+      // Pessoa nova de raiz: cria-se a pessoa e a titularidade.
+      const novoProprietarioId = uid('PR');
+      addOrEdit('proprietarios', {id: novoProprietarioId, nome: formData.novoNome, nif: formData.novoNif||'', email: formData.novoEmail||'', contacto: formData.novoContacto||''});
+      addOrEdit('titularidades', {
+        id: uid('TT'), imovelId: sellerRow.imovelId, proprietarioId: novoProprietarioId, percentagem: pctTransferir,
         dataInicio: dataT, dataFim: '', notas: 'Adquiriu ' + Math.round(pctTransferir*100) + '% de ' + sellerRow.nome + ' em ' + fmtDate(dataT),
       });
     }
@@ -1956,7 +2002,7 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
     <PageShell
       title="Proprietários"
       subtitle="Imóveis podem ter mais do que um proprietário. A renda líquida de cada um é calculada automaticamente a partir da sua percentagem."
-      onNew={()=>setModal({type:'proprietario', item:{...empty, id:uid('PR')}})}
+      onNew={()=>setModal({type:'proprietario', item:{...empty, id:uid('TT')}})}
     >
       {porImovel.map(({imovel, donos, historico})=>{
         const soma = donos.reduce((s,p)=>s+Number(p.percentagem||0),0);
@@ -1995,7 +2041,7 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
                             <div className="row-actions">
                               <button className="icon-btn" onClick={()=>setModal({type:'transferirFracao', item:p, outros: donos.filter(d=>d.id!==p.id)})}>Transferir fração</button>
                               <button className="icon-btn" onClick={()=>setModal({type:'proprietario', item:p})}>Editar</button>
-                              <button className="icon-btn danger" onClick={()=>remove('proprietarios', p.id)}>Remover</button>
+                              <button className="icon-btn danger" onClick={()=>remove('titularidades', p.id)}>Remover</button>
                             </div>
                           </td>
                         </tr>
@@ -2049,35 +2095,45 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
                 <div className="t1">{im.nome}</div>
                 <div className="t2">{im.morada}</div>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setModal({type:'proprietario', item:{...empty, id:uid('PR'), imovelId:im.id}})}>+ Adicionar proprietário</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setModal({type:'proprietario', item:{...empty, id:uid('TT'), imovelId:im.id}})}>+ Adicionar proprietário</button>
             </div>
           ))}
         </div>
       )}
 
       {modal && modal.type==='proprietario' && (
-        <Modal title={data.proprietarios.some(x=>x.id===modal.item.id) ? 'Editar proprietário' : 'Novo proprietário'} onClose={()=>setModal(null)}>
-          <ProprietarioForm item={modal.item} imoveis={data.imoveis} onSave={(it)=>{addOrEdit('proprietarios',it); setModal(null);}} onCancel={()=>setModal(null)} />
+        <Modal title={modal.item.proprietarioId ? 'Editar proprietário' : 'Novo proprietário'} onClose={()=>setModal(null)}>
+          <ProprietarioForm item={modal.item} imoveis={data.imoveis} proprietariosExistentes={data.proprietarios} onSave={salvarProprietario} onCancel={()=>setModal(null)} />
         </Modal>
       )}
 
       {modal && modal.type==='transferirFracao' && (
         <Modal title={'Transferir fração — ' + modal.item.nome} onClose={()=>setModal(null)}>
-          <TransferirFracaoForm sellerRow={modal.item} outros={modal.outros} onSave={(formData)=>executarTransferencia(modal.item, formData)} onCancel={()=>setModal(null)} />
+          <TransferirFracaoForm sellerRow={modal.item} outros={modal.outros} proprietariosExistentes={data.proprietarios} onSave={(formData)=>executarTransferencia(modal.item, formData)} onCancel={()=>setModal(null)} />
         </Modal>
       )}
     </PageShell>
   );
 }
 
-function ProprietarioForm({item, imoveis, onSave, onCancel}){
+function ProprietarioForm({item, imoveis, proprietariosExistentes, onSave, onCancel}){
   const [f, setF] = useState({...item, percentagem: item.percentagem===''||item.percentagem===undefined ? '' : Math.round(Number(item.percentagem)*100)});
   const set = (k,v)=>setF(s=>({...s,[k]:v}));
   const imovel = imoveis.find(i=>i.id===f.imovelId);
   const quotaPreview = imovel && f.percentagem!=='' ? Number(imovel.renda||0) * (Number(f.percentagem)/100) : null;
+  const aEditarLigacaoExistente = !!item.proprietarioId; // já tinha uma pessoa associada ao abrir o formulário
 
   const handleSave = () => {
     onSave({...f, percentagem: f.percentagem==='' ? 0 : Number(f.percentagem)/100});
+  };
+
+  // Ao escolher uma pessoa já registada na carteira, preenche os seus dados
+  // de contacto automaticamente (continuam editáveis — uma correção aqui
+  // atualiza essa pessoa em todos os imóveis onde tem posição).
+  const escolherPessoaExistente = (proprietarioId) => {
+    if(!proprietarioId){ set('proprietarioId',''); return; }
+    const p = proprietariosExistentes.find(pr=>pr.id===proprietarioId);
+    setF(s=>({...s, proprietarioId, nome: p?p.nome:s.nome, nif: p?(p.nif||''):s.nif, email: p?(p.email||''):s.email, contacto: p?(p.contacto||''):s.contacto}));
   };
 
   return (
@@ -2089,6 +2145,15 @@ function ProprietarioForm({item, imoveis, onSave, onCancel}){
             {imoveis.map(im=><option key={im.id} value={im.id}>{im.nome}</option>)}
           </select>
         </div>
+        {!aEditarLigacaoExistente && proprietariosExistentes.length>0 && (
+          <div className="field full"><label>Proprietário</label>
+            <select value={f.proprietarioId||''} onChange={e=>escolherPessoaExistente(e.target.value)}>
+              <option value="">— Novo proprietário —</option>
+              {proprietariosExistentes.map(p=><option key={p.id} value={p.id}>{p.nome}{p.nif?' ('+p.nif+')':''}</option>)}
+            </select>
+            {f.proprietarioId && <div style={{fontSize:11, color:'var(--gray)'}}>Reutiliza esta pessoa — os dados abaixo são dela e qualquer alteração aplica-se a todos os imóveis onde é proprietária.</div>}
+          </div>
+        )}
         <div className="field"><label>Nome do proprietário</label><input value={f.nome} onChange={e=>set('nome',e.target.value)} /></div>
         <div className="field"><label>NIF</label><input value={f.nif} onChange={e=>set('nif',e.target.value)} /><NifAviso nif={f.nif} /></div>
         <div className="field"><label>Contacto</label><input value={f.contacto} onChange={e=>set('contacto',e.target.value)} /></div>
@@ -2121,18 +2186,29 @@ function ProprietarioForm({item, imoveis, onSave, onCancel}){
   );
 }
 
-function TransferirFracaoForm({sellerRow, outros, onSave, onCancel}){
+function TransferirFracaoForm({sellerRow, outros, proprietariosExistentes, onSave, onCancel}){
   const [percentagem, setPercentagem] = useState('');
   const [dataTransferencia, setDataTransferencia] = useState(todayISO());
-  const [compradorExistenteId, setCompradorExistenteId] = useState('');
+  const [comprador, setComprador] = useState(''); // '' = novo; 'tit:<id>' = já copropietário deste imóvel; 'pes:<id>' = pessoa já registada, sem posição aqui ainda
   const [novoNome, setNovoNome] = useState('');
   const [novoNif, setNovoNif] = useState('');
   const [novoEmail, setNovoEmail] = useState('');
   const [novoContacto, setNovoContacto] = useState('');
 
+  // Pessoas já registadas na carteira que ainda não têm posição NESTE imóvel
+  // (as que já têm aparecem no primeiro grupo do select, por titularidade).
+  const idsJaNoImovel = new Set(outros.map(o=>o.proprietarioId));
+  const outrasPessoas = proprietariosExistentes.filter(p=>!idsJaNoImovel.has(p.id));
+
   const pctAtual = Math.round(Number(sellerRow.percentagem||0)*100);
   const pctNum = Number(percentagem||0);
-  const valido = pctNum>0 && pctNum<=pctAtual && dataTransferencia && (compradorExistenteId || novoNome.trim());
+  const valido = pctNum>0 && pctNum<=pctAtual && dataTransferencia && (comprador || novoNome.trim());
+
+  const handleSave = () => {
+    const compradorTitularidadeId = comprador.startsWith('tit:') ? comprador.slice(4) : '';
+    const compradorPessoaId = comprador.startsWith('pes:') ? comprador.slice(4) : '';
+    onSave({percentagem, data: dataTransferencia, compradorTitularidadeId, compradorPessoaId, novoNome, novoNif, novoEmail, novoContacto});
+  };
 
   return (
     <React.Fragment>
@@ -2146,13 +2222,22 @@ function TransferirFracaoForm({sellerRow, outros, onSave, onCancel}){
         <div className="field"><label>Data da transferência</label><input type="date" value={dataTransferencia} onChange={e=>setDataTransferencia(e.target.value)} /></div>
 
         <div className="field full"><label>Comprador</label>
-          <select value={compradorExistenteId} onChange={e=>{ setCompradorExistenteId(e.target.value); if(e.target.value) setNovoNome(''); }}>
+          <select value={comprador} onChange={e=>{ setComprador(e.target.value); if(e.target.value) setNovoNome(''); }}>
             <option value="">— Novo proprietário —</option>
-            {outros.map(o=><option key={o.id} value={o.id}>{o.nome} (atualmente {(Number(o.percentagem||0)*100).toFixed(0)}%)</option>)}
+            {outros.length>0 && (
+              <optgroup label="Já copropietário deste imóvel">
+                {outros.map(o=><option key={o.id} value={'tit:'+o.id}>{o.nome} (atualmente {(Number(o.percentagem||0)*100).toFixed(0)}%)</option>)}
+              </optgroup>
+            )}
+            {outrasPessoas.length>0 && (
+              <optgroup label="Já registado noutro imóvel">
+                {outrasPessoas.map(p=><option key={p.id} value={'pes:'+p.id}>{p.nome}{p.nif?' ('+p.nif+')':''}</option>)}
+              </optgroup>
+            )}
           </select>
         </div>
 
-        {!compradorExistenteId && (
+        {!comprador && (
           <React.Fragment>
             <div className="field"><label>Nome do novo proprietário</label><input value={novoNome} onChange={e=>setNovoNome(e.target.value)} /></div>
             <div className="field"><label>NIF</label><input value={novoNif} onChange={e=>setNovoNif(e.target.value)} /><NifAviso nif={novoNif} /></div>
@@ -2163,7 +2248,7 @@ function TransferirFracaoForm({sellerRow, outros, onSave, onCancel}){
       </div>
       <div className="modal-actions">
         <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
-        <button className="btn btn-primary" disabled={!valido} onClick={()=>onSave({percentagem, data: dataTransferencia, compradorExistenteId, novoNome, novoNif, novoEmail, novoContacto})}>Transferir</button>
+        <button className="btn btn-primary" disabled={!valido} onClick={handleSave}>Transferir</button>
       </div>
     </React.Fragment>
   );
@@ -3028,14 +3113,14 @@ function PagamentosView({data, addOrEdit, remove, modal, setModal, canEdit}){
 
       {modal && modal.type==='pagamento' && (
         <Modal title={data.pagamentos.some(x=>x.id===modal.item.id) ? 'Editar pagamento' : 'Novo pagamento'} onClose={()=>setModal(null)}>
-          <PagamentoForm item={modal.item} contratos={data.contratos} imoveis={data.imoveis} atualizacoesRenda={data.atualizacoesRenda} proprietarios={data.proprietarios} onSave={(it)=>{addOrEdit('pagamentos',it); setModal(null);}} onCancel={()=>setModal(null)} />
+          <PagamentoForm item={modal.item} contratos={data.contratos} imoveis={data.imoveis} atualizacoesRenda={data.atualizacoesRenda} proprietarios={data.proprietarios} titularidades={data.titularidades} onSave={(it)=>{addOrEdit('pagamentos',it); setModal(null);}} onCancel={()=>setModal(null)} />
         </Modal>
       )}
     </PageShell>
   );
 }
 
-function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietarios, onSave, onCancel}){
+function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietarios, titularidades, onSave, onCancel}){
   const [f, setF] = useState(item);
   const [autoFilled, setAutoFilled] = useState(false);
   const set = (k,v)=>setF(s=>({...s,[k]:v}));
@@ -3043,7 +3128,7 @@ function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietari
 
   const contrato = contratos.find(c=>c.id===f.contratoId);
   const imovel = contrato ? imoveis.find(i=>i.id===contrato.imovelId) : null;
-  const donos = imovel ? proprietariosAtuais(proprietarios, imovel.id) : [];
+  const donos = imovel ? proprietariosAtuais(proprietarios, titularidades, imovel.id) : [];
 
   const onContratoChange = (contratoId) => {
     set('contratoId', contratoId);
@@ -4125,7 +4210,7 @@ function DocForm({item, imoveis, onSave, onCancel}){
 /* ============================== Relatório Financeiro ============================== */
 // Identifica um proprietário de forma estável ao longo do tempo, mesmo que a
 // mesma pessoa tenha várias linhas (posições sucessivas por transferência de fração).
-function donoKey(p){ return p.nif ? ('nif:'+p.nif) : ('nome:'+(p.nome||'')); }
+function donoKey(p){ return p.proprietarioId ? ('pid:'+p.proprietarioId) : (p.nif ? ('nif:'+p.nif) : ('nome:'+(p.nome||''))); }
 
 // Constrói o Relatório Financeiro atribuindo cada renda e cada despesa ao(s)
 // proprietário(s) que detinham a percentagem do imóvel NA DATA dessa transação
@@ -4217,9 +4302,9 @@ function buildRelatorio(data, anoFiscal, filtroImovelId, filtroProprietario){
 
   const atribuir = (im, dataISO, campo, valor) => {
     if(!valor) return;
-    let donosNaData = proprietariosNaData(data.proprietarios, im.id, dataISO);
-    if(donosNaData.length===0) donosNaData = data.proprietarios.filter(p=>p.imovelId===im.id);
-    if(donosNaData.length===0) donosNaData = [{nome: im.proprietario || '—', percentagem: 1, email:'', nif:''}];
+    let donosNaData = proprietariosNaData(data.proprietarios, data.titularidades, im.id, dataISO);
+    if(donosNaData.length===0) donosNaData = data.titularidades.filter(t=>t.imovelId===im.id).map(t=>tComPessoa(t, data.proprietarios));
+    if(donosNaData.length===0) donosNaData = [{nome: im.proprietario || '—', percentagem: 1, email:'', nif:'', proprietarioId:null}];
 
     donosNaData.forEach(dono => {
       const pct = Number(dono.percentagem||1);
@@ -4293,7 +4378,7 @@ function buildAcertoContas(data, imovelId, dataInicio, dataFim){
   const despesasTotal = despesasDoPeriodo.reduce((s,d)=>s+Number(d.valor||0),0)
     + manutencoesDoPeriodo.reduce((s,m)=>s+Number(m.custo||0),0);
 
-  const todosProprietarios = data.proprietarios.filter(p=>p.imovelId===imovelId);
+  const todosProprietarios = data.titularidades.filter(t=>t.imovelId===imovelId).map(t=>tComPessoa(t, data.proprietarios));
 
   // Regista todos os proprietários que tiveram alguma posição relevante no período
   // (mesmo que já a tenham encerrado), para que continuem a aparecer no acerto.
@@ -4302,15 +4387,15 @@ function buildAcertoContas(data, imovelId, dataInicio, dataFim){
     const key = donoKey(p);
     if(!donosNoPeriodo.has(key)) donosNoPeriodo.set(key, {nome:p.nome, nif:p.nif||'', email:p.email||'', percentagemAtual:Number(p.percentagem||1)});
   };
-  if(todosProprietarios.length===0) registarDono({nome: im.proprietario || '—', percentagem:1, email:'', nif:''});
+  if(todosProprietarios.length===0) registarDono({nome: im.proprietario || '—', percentagem:1, email:'', nif:'', proprietarioId:null});
   else todosProprietarios.forEach(registarDono);
 
   // Atribui cada despesa/manutenção aos proprietários válidos NA DATA em que ocorreu —
   // assim uma transferência de fração a meio do período reparte corretamente a quota.
   const quotaPorDono = {};
   const atribuirDespesa = (dataISO, valor) => {
-    let donosNaData = proprietariosNaData(data.proprietarios, imovelId, dataISO);
-    if(donosNaData.length===0) donosNaData = todosProprietarios.length ? todosProprietarios : [{nome: im.proprietario || '—', percentagem:1, email:'', nif:''}];
+    let donosNaData = proprietariosNaData(data.proprietarios, data.titularidades, imovelId, dataISO);
+    if(donosNaData.length===0) donosNaData = todosProprietarios.length ? todosProprietarios : [{nome: im.proprietario || '—', percentagem:1, email:'', nif:'', proprietarioId:null}];
     donosNaData.forEach(p => {
       registarDono(p);
       const key = donoKey(p);
