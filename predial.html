@@ -1924,19 +1924,41 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
   // addOrEdit, um para 'proprietarios' (pessoa) e outro para 'titularidades'
   // (posição nesse imóvel). Ver salvarProprietario() abaixo.
   const empty = {id:'', imovelId:'', proprietarioId:'', nome:'', nif:'', email:'', percentagem:'', contacto:'', notas:'', dataInicio:'', dataFim:''};
-  const imovelInfo = (id) => data.imoveis.find(i=>i.id===id);
-  const [historicoAberto, setHistoricoAberto] = useState(null);
+  const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState(null);
 
-  // Agrupar proprietários ATUAIS por imóvel para mostrar a verificação de soma == 100%.
-  // Posições encerradas (dataFim preenchida, por uma transferência de fração) ficam
-  // à parte, no histórico de cada imóvel — não contam para a soma nem aparecem aqui.
-  const porImovel = data.imoveis.map(im => ({
-    imovel: im,
-    donos: proprietariosAtuais(data.proprietarios, data.titularidades, im.id),
-    historico: data.titularidades.filter(t=>t.imovelId===im.id && t.dataFim).map(t=>tComPessoa(t, data.proprietarios)).sort((a,b)=>(a.dataFim||'').localeCompare(b.dataFim||'')),
-  })).filter(g => g.donos.length>0 || g.historico.length>0);
+  // Uma linha por titularidade em aberto (posição atual), já com o imóvel
+  // ligado — é a lista "achatada" que alimenta a tabela única, ao género da
+  // vista de Inquilinos.
+  const linhas = data.titularidades
+    .filter(t=>!t.dataFim)
+    .map(t=>tComPessoa(t, data.proprietarios))
+    .map(p=>({...p, imovel: data.imoveis.find(im=>im.id===p.imovelId)}))
+    .filter(p=>p.imovel)
+    .sort((a,b)=> (a.imovel.nome||'').localeCompare(b.imovel.nome||'') || (a.nome||'').localeCompare(b.nome||''));
 
-  const semProprietario = data.imoveis.filter(im => proprietariosAtuais(data.proprietarios, data.titularidades, im.id).length===0 && !data.titularidades.some(t=>t.imovelId===im.id && t.dataFim));
+  const filtered = useFiltered(linhas, query, ['nome','nif','email']);
+
+  // Agrupamentos por imóvel, calculados a partir de `linhas` (não de
+  // `filtered`): servem para a verificação de soma==100%, para o histórico e
+  // para saber quem mais é coproprietário do mesmo imóvel (Transferir fração)
+  // — nada disto deve depender da pesquisa em curso.
+  const porImovelMap = {};
+  linhas.forEach(p=>{ (porImovelMap[p.imovelId] = porImovelMap[p.imovelId] || []).push(p); });
+
+  const imoveisComSomaErrada = Object.keys(porImovelMap).map(imovelId=>{
+    const donos = porImovelMap[imovelId];
+    return {imovel: donos[0].imovel, soma: donos.reduce((s,p)=>s+Number(p.percentagem||0),0)};
+  }).filter(g => Math.abs(g.soma-1) > 0.001);
+
+  const historicoPorImovel = {};
+  data.titularidades.filter(t=>t.dataFim).forEach(t=>{
+    const p = tComPessoa(t, data.proprietarios);
+    (historicoPorImovel[t.imovelId] = historicoPorImovel[t.imovelId] || []).push(p);
+  });
+  Object.values(historicoPorImovel).forEach(arr=>arr.sort((a,b)=>(a.dataFim||'').localeCompare(b.dataFim||'')));
+
+  const semProprietario = data.imoveis.filter(im => !porImovelMap[im.id] && !historicoPorImovel[im.id]);
 
   // Grava a pessoa (se for nova ou se os seus dados foram editados neste
   // formulário) e a posição (titularidade) num só passo. proprietarioId vazio
@@ -2004,87 +2026,91 @@ function ProprietariosView({data, addOrEdit, remove, modal, setModal}){
       subtitle="Imóveis podem ter mais do que um proprietário. A renda líquida de cada um é calculada automaticamente a partir da sua percentagem."
       onNew={()=>setModal({type:'proprietario', item:{...empty, id:uid('TT')}})}
     >
-      {porImovel.map(({imovel, donos, historico})=>{
-        const soma = donos.reduce((s,p)=>s+Number(p.percentagem||0),0);
-        const somaOk = donos.length===0 || Math.abs(soma-1) < 0.001;
-        return (
-          <div className="panel" key={imovel.id}>
-            <h3>
-              {imovel.nome}
-              {situacaoImovelTag(imovel)}
-              <span className="muted">Renda do imóvel: {fmtEUR(imovel.renda)}</span>
-            </h3>
-            {donos.length>0 && (
-              <div className="table-wrap" style={{border:'none'}}>
-                <table>
-                  <thead><tr>
-                    <th>Proprietário</th><th>NIF</th><th>Email</th><th>Contacto</th><th>% Propriedade</th><th>Renda Líquida (Quota)</th><th></th>
-                  </tr></thead>
-                  <tbody>
-                    {donos.map(p=>{
-                      const quota = Number(imovel.renda||0) * Number(p.percentagem||0);
-                      return (
-                        <tr key={p.id}>
-                          <td style={{fontWeight:600}}>{p.nome}</td>
-                          <td>{p.nif}</td>
-                          <td>
-                            {p.email ? (
-                              <span>{p.email} <Tag kind="verdigris">acesso</Tag></span>
-                            ) : (
-                              <span style={{color:'var(--gray)', fontSize:12}}>sem email — sem acesso</span>
-                            )}
-                          </td>
-                          <td>{p.contacto}</td>
-                          <td>{(Number(p.percentagem||0)*100).toFixed(0)}%</td>
-                          <td style={{fontWeight:600, color:'var(--telha)'}}>{fmtEUR(quota)}</td>
-                          <td>
-                            <div className="row-actions">
-                              <button className="icon-btn" onClick={()=>setModal({type:'transferirFracao', item:p, outros: donos.filter(d=>d.id!==p.id)})}>Transferir fração</button>
-                              <button className="icon-btn" onClick={()=>setModal({type:'proprietario', item:p})}>Editar</button>
-                              <button className="icon-btn danger" onClick={()=>remove('titularidades', p.id)}>Remover</button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div style={{marginTop:10, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-              {donos.length>0 && (
-                <React.Fragment>
-                  <span style={{fontSize:12.5, color:'var(--gray)'}}>Soma da propriedade atribuída:</span>
-                  <Tag kind={somaOk ? 'verdigris' : 'rust'}>{(soma*100).toFixed(0)}%{somaOk ? ' — correto' : ' — deveria ser 100%'}</Tag>
-                </React.Fragment>
-              )}
-              {historico.length>0 && (
-                <button className="btn btn-ghost btn-sm" onClick={()=>setHistoricoAberto(historicoAberto===imovel.id?null:imovel.id)}>
-                  {historicoAberto===imovel.id ? 'Esconder' : 'Ver'} histórico de propriedade ({historico.length})
-                </button>
-              )}
+      {imoveisComSomaErrada.length>0 && (
+        <div className="panel" style={{borderColor:'var(--rust)'}}>
+          <h3>Percentagem de propriedade incorreta</h3>
+          {imoveisComSomaErrada.map(g=>(
+            <div className="list-row" key={g.imovel.id}>
+              <div className="t1">{g.imovel.nome}</div>
+              <Tag kind="rust">{(g.soma*100).toFixed(0)}% — deveria ser 100%</Tag>
             </div>
-            {historicoAberto===imovel.id && historico.length>0 && (
-              <div className="table-wrap" style={{border:'none', marginTop:8}}>
-                <table>
-                  <thead><tr><th>Proprietário</th><th>%</th><th>De</th><th>Até</th><th>Notas</th></tr></thead>
-                  <tbody>
-                    {historico.map(p=>(
-                      <tr key={p.id}>
-                        <td>{p.nome}</td>
-                        <td>{(Number(p.percentagem||0)*100).toFixed(0)}%</td>
-                        <td>{p.dataInicio ? fmtDate(p.dataInicio) : '—'}</td>
-                        <td>{fmtDate(p.dataFim)}</td>
-                        <td style={{color:'var(--gray)', fontSize:12}}>{p.notas}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        );
-      })}
+          ))}
+        </div>
+      )}
+
+      <div className="toolbar">
+        <input className="search" placeholder="Procurar por nome, NIF, email…" value={query} onChange={e=>setQuery(e.target.value)} />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Proprietário</th><th>NIF</th><th>Email</th><th>Contacto</th><th>Imóvel</th><th>% Propriedade</th><th>Renda Líquida</th><th>Histórico</th><th></th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(p=>{
+              const quota = Number(p.imovel.renda||0) * Number(p.percentagem||0);
+              const hist = historicoPorImovel[p.imovelId] || [];
+              return (
+                <React.Fragment key={p.id}>
+                  <tr>
+                    <td style={{fontWeight:600}}>{p.nome}</td>
+                    <td>{p.nif}</td>
+                    <td>
+                      {p.email ? (
+                        <span>{p.email} <Tag kind="verdigris">acesso</Tag></span>
+                      ) : (
+                        <span style={{color:'var(--gray)', fontSize:12}}>sem email — sem acesso</span>
+                      )}
+                    </td>
+                    <td>{p.contacto}</td>
+                    <td>
+                      {p.imovel.nome}{situacaoImovelTag(p.imovel)}
+                      <div style={{color:'var(--gray)', fontSize:12}}>Renda do imóvel: {fmtEUR(p.imovel.renda)}</div>
+                    </td>
+                    <td>{(Number(p.percentagem||0)*100).toFixed(0)}%</td>
+                    <td style={{fontWeight:600, color:'var(--telha)'}}>{fmtEUR(quota)}</td>
+                    <td>
+                      {hist.length>0 ? (
+                        <button className="icon-btn" onClick={()=>setExpanded(expanded===p.id?null:p.id)}>
+                          {expanded===p.id ? 'Esconder' : 'Ver'} ({hist.length})
+                        </button>
+                      ) : <span style={{color:'var(--gray)'}}>—</span>}
+                    </td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="icon-btn" onClick={()=>setModal({type:'transferirFracao', item:p, outros: (porImovelMap[p.imovelId]||[]).filter(d=>d.id!==p.id)})}>Transferir fração</button>
+                        <button className="icon-btn" onClick={()=>setModal({type:'proprietario', item:p})}>Editar</button>
+                        <button className="icon-btn danger" onClick={()=>remove('titularidades', p.id)}>Remover</button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expanded===p.id && hist.length>0 && (
+                    <tr>
+                      <td colSpan="9" style={{background:'rgba(0,0,0,0.03)'}}>
+                        <table>
+                          <thead><tr><th>Proprietário</th><th>%</th><th>De</th><th>Até</th><th>Notas</th></tr></thead>
+                          <tbody>
+                            {hist.map(h=>(
+                              <tr key={h.id}>
+                                <td>{h.nome}</td>
+                                <td>{(Number(h.percentagem||0)*100).toFixed(0)}%</td>
+                                <td>{h.dataInicio ? fmtDate(h.dataInicio) : '—'}</td>
+                                <td>{fmtDate(h.dataFim)}</td>
+                                <td style={{color:'var(--gray)', fontSize:12}}>{h.notas}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {filtered.length===0 && <tr><td colSpan="9" className="empty">Nenhum proprietário encontrado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
 
       {semProprietario.length>0 && (
         <div className="panel">
