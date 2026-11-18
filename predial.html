@@ -681,6 +681,7 @@ const TABLE_MAP = {
   listaEspera: 'lista_espera',
   proprietarios: 'proprietarios',
   titularidades: 'titularidades',
+  terceiros: 'terceiros',
   atualizacoesRenda: 'atualizacoes_renda',
   vistorias: 'vistorias',
   despesas: 'despesas',
@@ -3232,12 +3233,24 @@ function PagamentoForm({item, contratos, imoveis, atualizacoesRenda, proprietari
 /* ============================== Manutenção ============================== */
 function ManutencaoView({data, addOrEdit, remove, modal, setModal, userEmail, userLabel, canEdit}){
   canEdit = canEdit===undefined ? true : canEdit;
-  const empty = {id:'', imovelId:'', dataPedido:todayISO(), descricao:'', prioridade:'Média', estado:'Pendente', custo:'', fornecedor:'', orcamentos:[], orcamentoAprovadoId:'', temFatura:false, faturaNome:'', faturaTipo:'', despesaId:'', registadoPorNome:userLabel||'Administrador', registadoPorEmail:userEmail||'', pagoPorNome:userLabel||'Administrador'};
+  const empty = {id:'', imovelId:'', dataPedido:todayISO(), descricao:'', prioridade:'Média', estado:'Pendente', custo:'', fornecedor:'', orcamentos:[], orcamentoAprovadoId:'', temFatura:false, faturaNome:'', faturaTipo:'', despesaId:'', registadoPorNome:userLabel||'Administrador', registadoPorEmail:userEmail||'', pagoPorTipo:'', pagoPorId:''};
   const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
   const [busyId, setBusyId] = useState(null);
 
   const handleSave = async (formData, fileAction, criarDespesa) => {
     let updated = {...formData};
+    if(updated.pagoPorTipo==='novoTerceiro'){
+      const nome = (updated.novoTerceiroNome||'').trim();
+      if(nome){
+        const terceiroId = uid('TC');
+        addOrEdit('terceiros', {id:terceiroId, nome, tipo:(updated.novoTerceiroTipo||'').trim() || 'Gestor de negócios', email:'', contacto:'', notas:''});
+        updated = {...updated, pagoPorTipo:'terceiro', pagoPorId:terceiroId};
+      } else {
+        updated = {...updated, pagoPorTipo:'', pagoPorId:''};
+      }
+    }
+    delete updated.novoTerceiroNome;
+    delete updated.novoTerceiroTipo;
     if(fileAction && fileAction.type==='set'){
       if(!storageAvailable()){
         alert('O seu navegador não permite guardar anexos neste contexto. O pedido foi guardado sem a fatura.');
@@ -3270,7 +3283,8 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal, userEmail, us
         valor: updated.custo, dedutivel: true,
         notas: 'Criada automaticamente a partir do pedido de manutenção ' + updated.id,
         temComprovativo: updated.temFatura, comprovativoNome: updated.faturaNome, comprovativoTipo: updated.faturaTipo,
-        registadoPorNome: updated.registadoPorNome, registadoPorEmail: updated.registadoPorEmail, pagoPorNome: updated.pagoPorNome,
+        registadoPorNome: updated.registadoPorNome, registadoPorEmail: updated.registadoPorEmail,
+        pagoPorTipo: updated.pagoPorTipo, pagoPorId: updated.pagoPorId,
       });
       updated = {...updated, despesaId};
     } else if(!criarDespesa && updated.despesaId){
@@ -3322,7 +3336,7 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal, userEmail, us
                   {(m.orcamentos||[]).length>0 && <div style={{fontSize:11, color:'var(--gray)', marginTop:3}}>{m.orcamentos.length} orçamento{m.orcamentos.length!==1?'s':''} comparado{m.orcamentos.length!==1?'s':''}</div>}
                 </td>
                 <td>
-                  {m.pagoPorNome || '—'}
+                  {nomePagador(data, m) || '—'}
                   {m.registadoPorNome && <div style={{fontSize:11, color:'var(--gray)'}}>registado por {m.registadoPorNome}</div>}
                 </td>
                 <td>
@@ -3350,14 +3364,61 @@ function ManutencaoView({data, addOrEdit, remove, modal, setModal, userEmail, us
 
       {modal && modal.type==='manut' && (
         <Modal title={data.manutencoes.some(x=>x.id===modal.item.id) ? 'Editar pedido' : 'Novo pedido de manutenção'} onClose={()=>setModal(null)}>
-          <ManutForm item={modal.item} imoveis={data.imoveis} onSave={handleSave} onCancel={()=>setModal(null)} />
+          <ManutForm item={modal.item} imoveis={data.imoveis} proprietarios={data.proprietarios} titularidades={data.titularidades} terceiros={data.terceiros} onSave={handleSave} onCancel={()=>setModal(null)} />
         </Modal>
       )}
     </PageShell>
   );
 }
 
-function ManutForm({item, imoveis, onSave, onCancel}){
+// Campo partilhado "Pago por" (Despesas e Manutenção): escolhe entre os
+// proprietários do imóvel à data em questão, ou um terceiro já registado
+// (ex. gestor de negócios), ou cria um terceiro novo ali mesmo. Guarda
+// sempre um id estruturado (pagoPorTipo + pagoPorId) — nunca texto livre.
+function PagoPorFields({f, set, proprietarios, titularidades, terceiros}){
+  const donos = f.imovelId ? proprietariosNaData(proprietarios, titularidades, f.imovelId, f.data || f.dataPedido || todayISO()) : [];
+  const valorAtual = f.pagoPorTipo==='proprietario' ? ('prop:'+f.pagoPorId)
+    : f.pagoPorTipo==='terceiro' ? ('terc:'+f.pagoPorId)
+    : f.pagoPorTipo==='novoTerceiro' ? 'novoTerceiro' : '';
+
+  const onChangeSel = (v) => {
+    if(v==='novoTerceiro'){ set('pagoPorTipo','novoTerceiro'); set('pagoPorId',''); return; }
+    if(v.indexOf('prop:')===0){ set('pagoPorTipo','proprietario'); set('pagoPorId', v.slice(5)); return; }
+    if(v.indexOf('terc:')===0){ set('pagoPorTipo','terceiro'); set('pagoPorId', v.slice(5)); return; }
+    set('pagoPorTipo',''); set('pagoPorId','');
+  };
+
+  return (
+    <React.Fragment>
+      <div className="field">
+        <label>Pago por</label>
+        <select value={valorAtual} onChange={e=>onChangeSel(e.target.value)}>
+          <option value="">—</option>
+          {donos.length>0 && (
+            <optgroup label="Proprietários deste imóvel">
+              {donos.map(p=><option key={p.proprietarioId} value={'prop:'+p.proprietarioId}>{p.nome}</option>)}
+            </optgroup>
+          )}
+          {terceiros.length>0 && (
+            <optgroup label="Terceiros">
+              {terceiros.map(t=><option key={t.id} value={'terc:'+t.id}>{t.nome}{t.tipo?(' ('+t.tipo+')'):''}</option>)}
+            </optgroup>
+          )}
+          <option value="novoTerceiro">— Novo terceiro —</option>
+        </select>
+        {!f.imovelId && <div style={{fontSize:11, color:'var(--gray)', marginTop:3}}>Escolha primeiro o imóvel para ver os seus proprietários.</div>}
+      </div>
+      {f.pagoPorTipo==='novoTerceiro' && (
+        <React.Fragment>
+          <div className="field"><label>Nome do terceiro</label><input value={f.novoTerceiroNome||''} onChange={e=>set('novoTerceiroNome', e.target.value)} placeholder="Ex.: nome do gestor de negócios" /></div>
+          <div className="field"><label>Tipo</label><input value={f.novoTerceiroTipo||''} onChange={e=>set('novoTerceiroTipo', e.target.value)} placeholder="Gestor de negócios" /></div>
+        </React.Fragment>
+      )}
+    </React.Fragment>
+  );
+}
+
+function ManutForm({item, imoveis, proprietarios, titularidades, terceiros, onSave, onCancel}){
   const [f, setF] = useState({...item, orcamentos: item.orcamentos || []});
   const [pendingFile, setPendingFile] = useState(null);
   const [removeExisting, setRemoveExisting] = useState(false);
@@ -3438,7 +3499,7 @@ function ManutForm({item, imoveis, onSave, onCancel}){
         </div>
         <div className="field"><label>Custo (€)</label><input type="number" value={f.custo} onChange={e=>set('custo',e.target.value)} /></div>
         <div className="field"><label>Fornecedor / Técnico</label><input value={f.fornecedor} onChange={e=>set('fornecedor',e.target.value)} /></div>
-        <div className="field"><label>Pago por</label><input value={f.pagoPorNome||''} onChange={e=>set('pagoPorNome',e.target.value)} placeholder="Nome de quem pagou" /></div>
+        <PagoPorFields f={f} set={set} proprietarios={proprietarios} titularidades={titularidades} terceiros={terceiros} />
         {f.registadoPorNome && (
           <div className="field full" style={{fontSize:11.5, color:'var(--gray)'}}>
             Registado por: {f.registadoPorNome}{f.registadoPorEmail ? (' · ' + f.registadoPorEmail) : ''}
@@ -3688,7 +3749,7 @@ function VistoriaForm({item, imoveis, onSave, onCancel}){
 /* ============================== Despesas ============================== */
 function DespesasView({data, addOrEdit, remove, modal, setModal, userEmail, userLabel, canEdit}){
   canEdit = canEdit===undefined ? true : canEdit;
-  const empty = {id:'', imovelId:'', data:todayISO(), anoFiscal:new Date().getFullYear(), categoria:'Obras', descricao:'', valor:'', dedutivel:true, notas:'', temComprovativo:false, comprovativoNome:'', comprovativoTipo:'', registadoPorNome:userLabel||'Administrador', registadoPorEmail:userEmail||'', pagoPorNome:userLabel||'Administrador'};
+  const empty = {id:'', imovelId:'', data:todayISO(), anoFiscal:new Date().getFullYear(), categoria:'Obras', descricao:'', valor:'', dedutivel:true, notas:'', temComprovativo:false, comprovativoNome:'', comprovativoTipo:'', registadoPorNome:userLabel||'Administrador', registadoPorEmail:userEmail||'', pagoPorTipo:'', pagoPorId:''};
   const imovelNome = (id) => { const im = data.imoveis.find(i=>i.id===id); return im ? im.nome : '—'; };
   const [busyId, setBusyId] = useState(null);
   const [filtroAno, setFiltroAno] = useState('todos');
@@ -3704,6 +3765,18 @@ function DespesasView({data, addOrEdit, remove, modal, setModal, userEmail, user
 
   const handleSave = async (formData, fileAction) => {
     let updated = {...formData, anoFiscal: formData.data ? Number(formData.data.slice(0,4)) : formData.anoFiscal};
+    if(updated.pagoPorTipo==='novoTerceiro'){
+      const nome = (updated.novoTerceiroNome||'').trim();
+      if(nome){
+        const terceiroId = uid('TC');
+        addOrEdit('terceiros', {id:terceiroId, nome, tipo:(updated.novoTerceiroTipo||'').trim() || 'Gestor de negócios', email:'', contacto:'', notas:''});
+        updated = {...updated, pagoPorTipo:'terceiro', pagoPorId:terceiroId};
+      } else {
+        updated = {...updated, pagoPorTipo:'', pagoPorId:''};
+      }
+    }
+    delete updated.novoTerceiroNome;
+    delete updated.novoTerceiroTipo;
     if(fileAction && fileAction.type==='set'){
       if(!storageAvailable()){
         alert('O seu navegador não permite guardar anexos neste contexto. A despesa foi guardada sem comprovativo.');
@@ -3784,7 +3857,7 @@ function DespesasView({data, addOrEdit, remove, modal, setModal, userEmail, user
                 <td>{fmtEUR(d.valor)}</td>
                 <td>{d.dedutivel ? <Tag kind="verdigris">Sim</Tag> : <Tag kind="gray">Não</Tag>}</td>
                 <td>
-                  {d.pagoPorNome || '—'}
+                  {nomePagador(data, d) || '—'}
                   {d.registadoPorNome && <div style={{fontSize:11, color:'var(--gray)'}}>registado por {d.registadoPorNome}</div>}
                 </td>
                 <td>
@@ -3811,14 +3884,14 @@ function DespesasView({data, addOrEdit, remove, modal, setModal, userEmail, user
 
       {modal && modal.type==='despesa' && (
         <Modal title={data.despesas.some(x=>x.id===modal.item.id) ? 'Editar despesa' : 'Nova despesa'} onClose={()=>setModal(null)}>
-          <DespesaForm item={modal.item} imoveis={data.imoveis} onSave={handleSave} onCancel={()=>setModal(null)} />
+          <DespesaForm item={modal.item} imoveis={data.imoveis} proprietarios={data.proprietarios} titularidades={data.titularidades} terceiros={data.terceiros} onSave={handleSave} onCancel={()=>setModal(null)} />
         </Modal>
       )}
     </PageShell>
   );
 }
 
-function DespesaForm({item, imoveis, onSave, onCancel}){
+function DespesaForm({item, imoveis, proprietarios, titularidades, terceiros, onSave, onCancel}){
   const [f, setF] = useState(item);
   const [pendingFile, setPendingFile] = useState(null);
   const [removeExisting, setRemoveExisting] = useState(false);
@@ -3883,7 +3956,7 @@ function DespesaForm({item, imoveis, onSave, onCancel}){
           </select>
         </div>
         <div className="field"><label>Ano fiscal</label><input type="number" value={f.data ? Number(f.data.slice(0,4)) : f.anoFiscal} disabled style={{color:'var(--gray)'}} /></div>
-        <div className="field"><label>Pago por</label><input value={f.pagoPorNome||''} onChange={e=>set('pagoPorNome',e.target.value)} placeholder="Nome de quem pagou" /></div>
+        <PagoPorFields f={f} set={set} proprietarios={proprietarios} titularidades={titularidades} terceiros={terceiros} />
         {f.registadoPorNome && (
           <div className="field full" style={{fontSize:11.5, color:'var(--gray)'}}>
             Registado por: {f.registadoPorNome}{f.registadoPorEmail ? (' · ' + f.registadoPorEmail) : ''}
@@ -4238,6 +4311,34 @@ function DocForm({item, imoveis, onSave, onCancel}){
 // mesma pessoa tenha várias linhas (posições sucessivas por transferência de fração).
 function donoKey(p){ return p.proprietarioId ? ('pid:'+p.proprietarioId) : (p.nif ? ('nif:'+p.nif) : ('nome:'+(p.nome||''))); }
 
+// Chave de quem pagou uma despesa/manutenção. Usa a MESMA chave que donoKey
+// dá a um proprietário ('pid:'+id), por isso um pagamento feito por um dono
+// casa automaticamente com a linha desse dono no Acerto de Contas. Um
+// terceiro (não-proprietário, ex. gestor de negócios) tem o seu próprio
+// espaço de chaves ('terc:'+id). Registos antigos em texto livre
+// (pagoPorNome, de antes desta funcionalidade) caem no fallback por nome,
+// com a mesma fragilidade de sempre — só para não perder histórico.
+function pagadorKey(item){
+  if(item.pagoPorTipo==='proprietario' && item.pagoPorId) return 'pid:'+item.pagoPorId;
+  if(item.pagoPorTipo==='terceiro' && item.pagoPorId) return 'terc:'+item.pagoPorId;
+  return item.pagoPorNome ? ('nome:'+item.pagoPorNome) : '';
+}
+
+// Nome a mostrar para "quem pagou" — resolve pelo id estruturado quando
+// existe; só usa o texto livre antigo (pagoPorNome) como recurso para
+// registos anteriores a esta funcionalidade.
+function nomePagador(data, item){
+  if(item.pagoPorTipo==='proprietario' && item.pagoPorId){
+    const p = data.proprietarios.find(x=>x.id===item.pagoPorId);
+    if(p) return p.nome;
+  }
+  if(item.pagoPorTipo==='terceiro' && item.pagoPorId){
+    const t = data.terceiros.find(x=>x.id===item.pagoPorId);
+    if(t) return t.nome;
+  }
+  return item.pagoPorNome || '';
+}
+
 // Constrói o Relatório Financeiro atribuindo cada renda e cada despesa ao(s)
 // proprietário(s) que detinham a percentagem do imóvel NA DATA dessa transação
 // (data.proprietarios + historicoPropriedade via dataInicio/dataFim), em vez de
@@ -4429,24 +4530,33 @@ function buildAcertoContas(data, imovelId, dataInicio, dataFim){
     });
   };
 
-  const pagamentosPorPessoa = {}; // nome -> total que pagou do próprio bolso no período
+  // Quem pagou — por chave estável (proprietário ou terceiro), não por nome em
+  // texto livre. Um terceiro (ou um pagador antigo em texto livre que não
+  // corresponda a nenhum proprietário) é registado aqui com 0% de posse —
+  // por isso a sua quota é sempre 0 e tudo o que pagou fica "a receber" (a
+  // carteira deve-lhe isso), em vez de ser redistribuído entre donos.
+  const pagamentosPorPessoa = {}; // key -> {nome, total}
+  const registarPagamento = (item, valor) => {
+    const key = pagadorKey(item);
+    if(!key) return;
+    if(!pagamentosPorPessoa[key]) pagamentosPorPessoa[key] = {nome: nomePagador(data, item), total:0};
+    pagamentosPorPessoa[key].total += valor;
+    if(!donosNoPeriodo.has(key)) donosNoPeriodo.set(key, {nome: pagamentosPorPessoa[key].nome, nif:'', email:'', percentagemAtual:0});
+  };
   despesasDoPeriodo.forEach(d => {
     atribuirDespesa(d.data, Number(d.valor||0));
-    const nome = d.pagoPorNome || '';
-    if(nome) pagamentosPorPessoa[nome] = (pagamentosPorPessoa[nome]||0) + Number(d.valor||0);
+    registarPagamento(d, Number(d.valor||0));
   });
   manutencoesDoPeriodo.forEach(m => {
     atribuirDespesa(m.dataPedido, Number(m.custo||0));
-    const nome = m.pagoPorNome || '';
-    if(nome) pagamentosPorPessoa[nome] = (pagamentosPorPessoa[nome]||0) + Number(m.custo||0);
+    registarPagamento(m, Number(m.custo||0));
   });
 
   const acertosDoPeriodo = data.acertos.filter(a => a.imovelId===imovelId && dentroPeriodo(a.data));
 
-  return Array.from(donosNoPeriodo.values()).map(dono => {
-    const key = donoKey(dono);
+  return Array.from(donosNoPeriodo.entries()).map(([key, dono]) => {
     const quotaDespesa = quotaPorDono[key] || 0; // a parte que lhe cabia pagar, proporcional ao período em que foi dono
-    const despesasPagas = pagamentosPorPessoa[dono.nome] || 0;
+    const despesasPagas = (pagamentosPorPessoa[key] && pagamentosPorPessoa[key].total) || 0;
     const saldoBase = despesasPagas - quotaDespesa; // positivo = pagou a mais, tem a receber; negativo = deve
     const reembolsoOutros = Math.max(0, saldoBase);
 
